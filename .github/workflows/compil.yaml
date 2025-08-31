@@ -1,4 +1,4 @@
-name: "[DEBUG] Build & Push Docker Image from Main"
+name: "Build & Push Docker Image from Main"
 
 on:
   workflow_dispatch:
