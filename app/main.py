@@ -15,6 +15,8 @@ MQTT_PORT = int(os.getenv("MQTT_PORT") or 1883)
 VM_HOST = os.getenv("VM_HOST")
 VM_PORT = 8428
 TOPIC = "homeassistant/sensor/consommation_veille_linky/state"
+VM_QUERY_START = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1d)'
+VM_QUERY_END = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1h)'
 
 print("\n--- Chargement de la configuration ---")
 print(f"  - Hôte MQTT: {MQTT_HOST}")
@@ -62,7 +64,8 @@ def fetch_data(query):
         print(f"❌ Erreur inattendue lors de la récupération des données: {e}")
         return None
 
-def on_connect(client, userdata, flags, rc):
+# 💡 Ligne corrigée: Utilisation de la nouvelle signature pour le callback MQTTv5
+def on_connect(client, userdata, flags, rc, properties=None):
     """Callback qui gère la connexion au broker MQTT."""
     if rc == 0:
         print(f"✅ Connexion au broker MQTT réussie (Code {rc})")
@@ -74,8 +77,8 @@ def main():
     Fonction principale.
     Gère la connexion MQTT, la récupération des données, le calcul et la publication.
     """
-    # 💡 Ligne corrigée: Le client MQTT utilise la dernière version du protocole par défaut
-    client = mqtt.Client()
+    # 💡 Ligne corrigée: Utilisation du protocole MQTTv5 pour correspondre au nouveau callback
+    client = mqtt.Client(protocol=mqtt.MQTTv5)
     client.on_connect = on_connect
 
     if LOGIN and PASSWORD:
@@ -112,7 +115,6 @@ def main():
                     print(f"✅ Calcul de la consommation: {end_value} - {start_value} = {daily_consumption} kWh")
                     
                     print(f"\nÉtape 3: Publication sur MQTT...")
-                    # 💡 Ligne corrigée: Ajout de qos=1 et retain=True
                     result = client.publish(TOPIC, daily_consumption, qos=1, retain=True)
                     print(f"  - Résultat de la publication: Code de retour = {result.rc} (0 = succès)")
                     if result.rc == mqtt.MQTT_ERR_SUCCESS:
