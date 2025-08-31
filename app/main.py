@@ -4,10 +4,8 @@ import paho.mqtt.client as mqtt
 import time
 import sys
 
-print("--- Initialisation du script de récupération de données ---")
-print(f"Version Python: {sys.version}")
-
 # --- Configuration (utilisant les variables d'environnement) ---
+# Ces variables sont définies dans le fichier docker-compose.yml
 MQTT_HOST = os.environ.get("MQTT_HOST")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 VM_HOST = os.environ.get("VM_HOST")
@@ -16,6 +14,8 @@ TOPIC = "homeassistant/sensor/consommation_veille_linky/state"
 VM_QUERY_START = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1d)'
 VM_QUERY_END = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1h)'
 
+print("--- Initialisation du script de récupération de données ---")
+print(f"Version Python: {sys.version}")
 print(f"Configuration chargée:")
 print(f"  - MQTT Host: {MQTT_HOST}")
 print(f"  - MQTT Port: {MQTT_PORT}")
@@ -74,13 +74,15 @@ def main():
     
     print(f"\nTentative de connexion à MQTT sur {MQTT_HOST}:{MQTT_PORT}...")
     try:
+        # 💡 Bloc de code modifié
         client.connect(MQTT_HOST, MQTT_PORT, 60)
+        client.loop_start() # Démarrage de la boucle de gestion des événements MQTT
     except Exception as e:
-        print(f"Échec de la connexion à MQTT : {e}")
-        sys.exit(1) # Quitte si la connexion MQTT échoue
+        print(f"❌ Échec critique de la connexion à MQTT : {e}")
+        # Termine le script car la connexion est essentielle
+        sys.exit(1)
 
-    client.loop_start()
-
+    # ... Reste du code non modifié ...
     # Boucle pour s'exécuter une fois toutes les 24 heures
     while True:
         try:
