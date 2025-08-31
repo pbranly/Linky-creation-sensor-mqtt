@@ -4,8 +4,10 @@ import paho.mqtt.client as mqtt
 import time
 import sys
 
+print("--- Initialisation du script de récupération de données ---")
+print(f"Version Python: {sys.version}")
+
 # --- Configuration (utilisant les variables d'environnement) ---
-# Ces variables sont définies dans le fichier docker-compose.yml
 MQTT_HOST = os.environ.get("MQTT_HOST")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", 1883))
 VM_HOST = os.environ.get("VM_HOST")
@@ -14,8 +16,6 @@ TOPIC = "homeassistant/sensor/consommation_veille_linky/state"
 VM_QUERY_START = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1d)'
 VM_QUERY_END = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1h)'
 
-print("--- Initialisation du script de récupération de données ---")
-print(f"Version Python: {sys.version}")
 print(f"Configuration chargée:")
 print(f"  - MQTT Host: {MQTT_HOST}")
 print(f"  - MQTT Port: {MQTT_PORT}")
@@ -36,7 +36,7 @@ def fetch_data(query):
         response = requests.get(url, params={'query': query})
         
         print(f"  - Code de statut HTTP: {response.status_code}")
-        response.raise_for_status() # Lève une exception pour les codes d'erreur HTTP
+        response.raise_for_status()
         
         data = response.json()
         print(f"  - Réponse JSON reçue: {data}")
@@ -66,32 +66,29 @@ def main():
     """
     Fonction principale.
     - Établit la connexion MQTT.
-    - Entre dans une boucle infinie pour exécuter le script une fois par jour.
     - Effectue les requêtes vers VictoriaMetrics, calcule la consommation et publie le résultat.
     """
     client = mqtt.Client(protocol=mqtt.MQTTv311)
     client.on_connect = on_connect
-    
-    print(f"\nTentative de connexion à MQTT sur {MQTT_HOST}:{MQTT_PORT}...")
+
+    # 💡 Lignes corrigées: On démarre la boucle avant de se connecter.
+    print("\nDémarrage de la boucle de gestion des événements MQTT...")
+    client.loop_start()
+
+    print(f"Tentative de connexion à MQTT sur {MQTT_HOST}:{MQTT_PORT}...")
     try:
-        # 💡 Bloc de code modifié
         client.connect(MQTT_HOST, MQTT_PORT, 60)
-        client.loop_start() # Démarrage de la boucle de gestion des événements MQTT
     except Exception as e:
         print(f"❌ Échec critique de la connexion à MQTT : {e}")
-        # Termine le script car la connexion est essentielle
         sys.exit(1)
 
-    # ... Reste du code non modifié ...
+    # ... (Reste du code non modifié)
     # Boucle pour s'exécuter une fois toutes les 24 heures
     while True:
         try:
             print("\n--- Exécution du cycle quotidien ---")
             
-            # Récupération de la valeur du compteur à minuit la veille
             start_value = fetch_data(VM_QUERY_START)
-            
-            # Récupération de la valeur du compteur à 23h59 la veille
             end_value = fetch_data(VM_QUERY_END)
             
             print(f"\nRésultats des requêtes:")
