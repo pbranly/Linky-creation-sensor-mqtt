@@ -1,1 +1,50 @@
+name: "[DEBUG] Build & Push Docker Image from Main"
 
+on:
+  workflow_dispatch:
+    inputs:
+      TAG:
+        description: "Tag pour l'image Docker"
+        required: true
+        default: "debug"
+
+env:
+  DOCKERHUB_USERNAME: "pbranly"
+  IMAGE_NAME: "linkycreationdockermqtt"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      # 1️⃣ Cloner le dépôt depuis la branche main
+      - name: Checkout main
+        uses: actions/checkout@v3
+        with:
+          ref: main
+
+      # 2️⃣ Vérifier que le secret DockerHub est bien présent
+      - name: Vérifier variables
+        run: |
+          echo "DOCKERHUB_USERNAME = $DOCKERHUB_USERNAME"
+          echo "IMAGE_NAME = $IMAGE_NAME"
+          if [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "❌ DOCKERHUB_TOKEN est vide"
+            exit 1
+          else
+            echo "✅ DOCKERHUB_TOKEN est défini"
+          fi
+
+      # 3️⃣ Login DockerHub
+      - name: Login DockerHub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+      # 4️⃣ Build l’image Docker
+      - name: Build Docker image
+        run: |
+          docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:${{ github.event.inputs.TAG }} .
+
+      # 5️⃣ Push l’image Docker
+      - name: Push Docker image
+        run: |
+          docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:${{ github.event.inputs.TAG }}
