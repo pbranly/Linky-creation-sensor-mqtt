@@ -31,7 +31,8 @@ def fetch_data(query):
         print(f"Erreur lors de la requête vers VictoriaMetrics : {e}")
     return None
 
-def on_connect(client, userdata, flags, rc):
+# 💡 Ligne corrigée : Utilisation de la nouvelle signature pour le callback
+def on_connect(client, userdata, flags, rc, properties=None):
     """Callback qui gère la connexion au broker MQTT."""
     print(f"Connecté à MQTT avec le code de résultat {rc}")
 
