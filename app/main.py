@@ -112,8 +112,13 @@ def main():
                     print(f"✅ Calcul de la consommation: {end_value} - {start_value} = {daily_consumption} kWh")
                     
                     print(f"\nÉtape 3: Publication sur MQTT...")
-                    client.publish(TOPIC, daily_consumption)
-                    print(f"✅ Données publiées avec succès sur le topic : {TOPIC}")
+                    result = client.publish(TOPIC, daily_consumption)
+                    # 💡 Log complémentaire pour le statut de la publication
+                    print(f"  - Résultat de la publication: Code de retour = {result.rc} (0 = succès)")
+                    if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                        print(f"✅ Données publiées avec succès sur le topic : {TOPIC}")
+                    else:
+                        print(f"❌ Échec de la publication. Le message n'a pas été mis en file d'attente.")
                 else:
                     print("⚠️ Attention: La valeur de fin est inférieure à celle de début. Le calcul est ignoré.")
             else:
