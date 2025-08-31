@@ -31,7 +31,8 @@ def fetch_data(query):
         print(f"Erreur lors de la requête vers VictoriaMetrics : {e}")
     return None
 
-def on_connect(client, userdata, flags, rc):
+# 💡 Ligne corrigée : mise à jour de la signature de la fonction pour MQTTv5
+def on_connect(client, userdata, flags, rc, properties=None):
     """Callback qui gère la connexion au broker MQTT."""
     print(f"Connecté à MQTT avec le code de résultat {rc}")
 
@@ -42,7 +43,6 @@ def main():
     - Entre dans une boucle infinie pour exécuter le script une fois par jour.
     - Effectue les requêtes vers VictoriaMetrics, calcule la consommation et publie le résultat.
     """
-    # 💡 Ligne corrigée : Utilisation du protocole MQTTv5
     client = mqtt.Client(protocol=mqtt.MQTTv5)
     client.on_connect = on_connect
     
