@@ -42,7 +42,7 @@ jobs:
       # 4️⃣ Build l’image Docker
       - name: Build Docker image
         run: |
-          docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:${{ github.event.inputs.TAG }} .
+          docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:${{ github.event.inputs.TAG }} ./app
 
       # 5️⃣ Push l’image Docker
       - name: Push Docker image
