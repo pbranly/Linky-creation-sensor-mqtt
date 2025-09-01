@@ -5,11 +5,9 @@ import time
 import sys
 
 print("--- Début de l'exécution du script de récupération des données Linky ---")
-# 💡 Attente de 5 secondes pour la configuration du réseau
 time.sleep(5)
 print(f"Version Python utilisée: {sys.version}")
 
-# --- Configuration (utilisant les variables d'environnement) ---
 LOGIN = os.getenv("LOGIN")
 PASSWORD = os.getenv("PASSWORD")
 MQTT_HOST = os.getenv("MQTT_HOST")
@@ -29,9 +27,6 @@ print(f"  - Login MQTT: {'Défini' if LOGIN else 'Non défini'}")
 print("--- Configuration chargée avec succès ---")
 
 def fetch_data(query):
-    """
-    Exécute une requête à l'API de VictoriaMetrics et retourne la valeur.
-    """
     url = f"http://{VM_HOST}:{VM_PORT}/api/v1/query"
     
     print(f"\nTentative de connexion à VictoriaMetrics...")
@@ -67,17 +62,12 @@ def fetch_data(query):
         return None
 
 def on_connect(client, userdata, flags, rc, properties=None):
-    """Callback qui gère la connexion au broker MQTT."""
     if rc == 0:
         print(f"✅ Connexion au broker MQTT réussie (Code {rc})")
     else:
         print(f"❌ Échec de la connexion au broker MQTT. Code de résultat: {rc}")
 
 def main():
-    """
-    Fonction principale.
-    Gère la connexion MQTT, la récupération des données, le calcul et la publication.
-    """
     client = mqtt.Client(protocol=mqtt.MQTTv5)
     client.on_connect = on_connect
 
@@ -115,7 +105,7 @@ def main():
                     print(f"✅ Calcul de la consommation: {end_value} - {start_value} = {daily_consumption} kWh")
                     
                     print(f"\nÉtape 3: Publication sur MQTT...")
-                    # 💡 Ajout du log de la charge utile
+                    # Affiche la charge utile exacte
                     print(f"  - Publication de la charge utile: '{daily_consumption}' sur le topic '{TOPIC}'")
                     result = client.publish(TOPIC, daily_consumption, qos=1, retain=True)
                     print(f"  - Résultat de la publication: Code de retour = {result.rc} (0 = succès)")
