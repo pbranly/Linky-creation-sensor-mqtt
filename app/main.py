@@ -3,8 +3,8 @@ import sys
 import time
 import json
 import threading
-from datetime import datetime, timedelta, timezone
 import requests
+from datetime import datetime
 import paho.mqtt.client as mqtt
 
 print("--- Début de l'exécution du script Linky + VictoriaMetrics ---")
@@ -38,47 +38,36 @@ LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
 # =======================
 # VictoriaMetrics
 # =======================
-def fetch_index_at(vm_host, vm_port, metric_name, timestamp_epoch):
-    """Récupère la valeur de l'index à un timestamp précis depuis VictoriaMetrics."""
+def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
+    """
+    Calcule la consommation de la veille comme :
+    dernière valeur de la veille - première valeur de la veille
+    """
     url = f"http://{vm_host}:{vm_port}/api/v1/query"
-    query = f'{metric_name} @ {timestamp_epoch}'
-    try:
-        r = requests.get(url, params={'query': query}, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        result = data.get("data", {}).get("result", [])
-        if result and "value" in result[0] and len(result[0]["value"]) >= 2:
-            val = float(result[0]["value"][1])
-            print(f"VM: index à {timestamp_epoch} = {val}")
-            return val
-        print(f"VM: pas de valeur à {timestamp_epoch}")
+    queries = {
+        "first": f"first_over_time({metric_name}[1d] offset 1d)",
+        "last":  f"last_over_time({metric_name}[1d] offset 1d)"
+    }
+    result = {}
+    for key, query in queries.items():
+        try:
+            r = requests.get(url, params={'query': query}, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            res_list = data.get("data", {}).get("result", [])
+            if res_list and "value" in res_list[0]:
+                result[key] = float(res_list[0]["value"][1])
+                print(f"VM: {key} value = {result[key]}")
+            else:
+                result[key] = None
+                print(f"VM: pas de valeur pour {key}")
+        except Exception as e:
+            print(f"❌ Erreur VM query '{query}': {e}")
+            result[key] = None
+
+    if result.get("first") is None or result.get("last") is None:
         return None
-    except Exception as e:
-        print(f"❌ Erreur VM query '{query}': {e}")
-        return None
-
-def calculate_yesterday_consumption(vm_host, vm_port, metric_name):
-    """Calcule consommation de la veille = index aujourd'hui 00:00 – index hier 00:00 UTC."""
-    today_utc = datetime.now(timezone.utc).date()
-    yesterday_utc = today_utc - timedelta(days=1)
-
-    ts_yesterday = int(datetime.combine(yesterday_utc, datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    ts_today = int(datetime.combine(today_utc, datetime.min.time(), tzinfo=timezone.utc).timestamp())
-
-    index_start = fetch_index_at(vm_host, vm_port, metric_name, ts_yesterday)
-    index_end   = fetch_index_at(vm_host, vm_port, metric_name, ts_today)
-
-    if index_start is None or index_end is None:
-        print("⚠️ Données manquantes, consommation non calculée")
-        return None
-
-    if index_end >= index_start:
-        consumption = round(index_end - index_start, 2)
-        print(f"✅ Consommation veille = {consumption} kWh")
-        return consumption
-    else:
-        print("⚠️ Index fin < index début, consommation ignorée")
-        return None
+    return round(result["last"] - result["first"], 2)
 
 # =======================
 # JSON principal (EXEMPLE fixe)
@@ -235,27 +224,36 @@ def main():
     print(f"📡 Discovery publié: {LINKY_DISCOVERY_TOPIC}")
 
     # =======================
-    # Boucle quotidienne
+    # Boucle principale
     # =======================
+    print("\n--- Boucle MQTT démarrée ---")
     while True:
-        print("\n--- Cycle de calcul ---")
-        # --- Consommation de la veille depuis VM
-        daily_consumption = calculate_yesterday_consumption(VM_HOST, VM_PORT, METRIC_NAME)
-        if daily_consumption is not None:
-            client.publish(STATE_TOPIC, str(daily_consumption), qos=1, retain=MQTT_RETAIN)
-            print(f"📩 Publié {STATE_TOPIC}: {daily_consumption} kWh")
+        print("\n--- Début du cycle quotidien ---")
+        consommation_veille = fetch_first_last_yesterday(VM_HOST, VM_PORT, METRIC_NAME)
 
-        # --- Publication JSON principal
+        if consommation_veille is None:
+            print("❌ Données VM manquantes, cycle ignoré")
+        else:
+            # --- Publier consommation veille ---
+            result = client.publish(STATE_TOPIC, str(consommation_veille), qos=1, retain=MQTT_RETAIN)
+            result.wait_for_publish()
+            print(f"📩 Consommation veille publiée: {consommation_veille} kWh sur {STATE_TOPIC}")
+
+        # --- Publier JSON complet sensor.linky_test ---
+        now = datetime.now().astimezone().isoformat()
         linky_payload = build_linky_payload_static()
-        client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
-        print(f"📩 Publié {LINKY_STATE_TOPIC}: JSON complet")
+        linky_payload["lastUpdate"] = now
+        linky_payload["timeLastCall"] = now
 
-        # --- Attente 24h
-        print("--- Fin de cycle. Attente 24h ---")
-        time.sleep(24*3600)
+        result2 = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
+        result2.wait_for_publish()
+        print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
 
+        print("\n--- Cycle terminé. Mise en veille pour 24h ---")
+        time.sleep(24 * 3600)
+
+# =======================
+# Lancement script
+# =======================
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("Arrêt par utilisateur.")
+    main()
