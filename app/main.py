@@ -5,6 +5,8 @@ import time
 import sys
 
 print("--- Début de l'exécution du script de récupération des données Linky ---")
+# 💡 Attente de 5 secondes pour la configuration du réseau
+time.sleep(5)
 print(f"Version Python utilisée: {sys.version}")
 
 # --- Configuration (utilisant les variables d'environnement) ---
@@ -64,7 +66,6 @@ def fetch_data(query):
         print(f"❌ Erreur inattendue lors de la récupération des données: {e}")
         return None
 
-# 💡 Ligne corrigée: Utilisation de la nouvelle signature pour le callback MQTTv5
 def on_connect(client, userdata, flags, rc, properties=None):
     """Callback qui gère la connexion au broker MQTT."""
     if rc == 0:
@@ -77,7 +78,6 @@ def main():
     Fonction principale.
     Gère la connexion MQTT, la récupération des données, le calcul et la publication.
     """
-    # 💡 Ligne corrigée: Utilisation du protocole MQTTv5 pour correspondre au nouveau callback
     client = mqtt.Client(protocol=mqtt.MQTTv5)
     client.on_connect = on_connect
 
@@ -115,6 +115,8 @@ def main():
                     print(f"✅ Calcul de la consommation: {end_value} - {start_value} = {daily_consumption} kWh")
                     
                     print(f"\nÉtape 3: Publication sur MQTT...")
+                    # 💡 Ajout du log de la charge utile
+                    print(f"  - Publication de la charge utile: '{daily_consumption}' sur le topic '{TOPIC}'")
                     result = client.publish(TOPIC, daily_consumption, qos=1, retain=True)
                     print(f"  - Résultat de la publication: Code de retour = {result.rc} (0 = succès)")
                     if result.rc == mqtt.MQTT_ERR_SUCCESS:
