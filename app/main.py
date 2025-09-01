@@ -3,11 +3,13 @@ import requests
 import paho.mqtt.client as mqtt
 import time
 import sys
+import threading
 
 print("--- Début de l'exécution du script de récupération des données Linky ---")
 time.sleep(5)
 print(f"Version Python utilisée: {sys.version}")
 
+# --- Configuration depuis les variables d'environnement ---
 LOGIN = os.getenv("LOGIN")
 PASSWORD = os.getenv("PASSWORD")
 MQTT_HOST = os.getenv("MQTT_HOST")
@@ -16,7 +18,8 @@ VM_HOST = os.getenv("VM_HOST")
 VM_PORT = 8428
 TOPIC = "homeassistant/sensor/consommation_veille_linky/state"
 VM_QUERY_START = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1d)'
-VM_QUERY_END = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1h)'
+VM_QUERY_END   = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1h)'
+MQTT_RETAIN = True
 
 print("\n--- Chargement de la configuration ---")
 print(f"  - Hôte MQTT: {MQTT_HOST}")
@@ -26,7 +29,7 @@ print(f"  - Topic de publication MQTT: {TOPIC}")
 print(f"  - Login MQTT: {'Défini' if LOGIN else 'Non défini'}")
 print("--- Configuration chargée avec succès ---")
 
-
+# --- Fonction pour récupérer les données depuis VictoriaMetrics ---
 def fetch_data(query):
     url = f"http://{VM_HOST}:{VM_PORT}/api/v1/query"
     print(f"\nTentative de connexion à VictoriaMetrics...")
@@ -53,28 +56,25 @@ def fetch_data(query):
             print("  - Erreur: Les champs 'data' ou 'result' sont absents ou vides.")
             return None
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Erreur de connexion/requête HTTP: {e}")
-        return None
     except Exception as e:
-        print(f"❌ Erreur inattendue lors de la récupération des données: {e}")
+        print(f"❌ Erreur récupération données: {e}")
         return None
 
-
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print(f"✅ Connexion au broker MQTT réussie (Code {rc})")
-    else:
-        print(f"❌ Échec de la connexion au broker MQTT. Code de résultat: {rc}")
-
-
-def on_message(client, userdata, msg):
-    print(f"📩 Message reçu sur {msg.topic} : {msg.payload.decode()}")
-
-
+# --- MQTT ---
 def main():
-    # Client MQTT MQTTv3.1.1 pour compatibilité
-    client = mqtt.Client(protocol=mqtt.MQTTv311)
+    client = mqtt.Client(protocol=mqtt.MQTTv5)
+    evt = threading.Event()
+
+    def on_connect(c, u, flags, rc, props=None):
+        if rc == 0:
+            print("✅ Connexion MQTT réussie")
+            evt.set()
+        else:
+            print(f"❌ Connexion MQTT échouée, code {rc}")
+
+    def on_message(c, u, msg):
+        print(f"📩 Message reçu sur {msg.topic}: {msg.payload.decode()}")
+
     client.on_connect = on_connect
     client.on_message = on_message
 
@@ -82,65 +82,47 @@ def main():
         print("Authentification MQTT activée.")
         client.username_pw_set(LOGIN, PASSWORD)
 
-    print(f"\nTentative de connexion à MQTT sur {MQTT_HOST}:{MQTT_PORT}...")
+    client.loop_start()
     try:
         client.connect(MQTT_HOST, MQTT_PORT, 60)
     except Exception as e:
-        print(f"❌ Échec critique de la connexion à MQTT: {e}")
+        print(f"❌ Échec de la connexion MQTT: {e}")
         sys.exit(1)
 
-    client.loop_start()
+    if not evt.wait(timeout=10):
+        print("⛔ Impossible de se connecter au broker MQTT, arrêt du script")
+        sys.exit(1)
+
+    client.subscribe(TOPIC)
     print("\n--- Boucle MQTT démarrée ---")
 
     while True:
         print("\n--- Début du cycle de calcul quotidien ---")
+        start_value = fetch_data(VM_QUERY_START)
+        end_value   = fetch_data(VM_QUERY_END)
 
-        try:
-            print("Étape 1: Récupération de la valeur de début de veille...")
-            start_value = fetch_data(VM_QUERY_START)
+        print(f"\n--- Résultats finaux des requêtes ---")
+        print(f"  - Valeur de début de veille: {start_value}")
+        print(f"  - Valeur de fin de veille: {end_value}")
 
-            print("\nÉtape 2: Récupération de la valeur de fin de veille...")
-            end_value = fetch_data(VM_QUERY_END)
+        if start_value is None or end_value is None:
+            print("❌ Données manquantes, cycle ignoré")
+        else:
+            if end_value >= start_value:
+                daily_consumption = round(end_value - start_value, 2)
+                print(f"✅ Consommation calculée: {daily_consumption} kWh")
 
-            print(f"\n--- Résultats finaux des requêtes ---")
-            print(f"  - Valeur de début de veille: {start_value}")
-            print(f"  - Valeur de fin de veille: {end_value}")
-
-            if start_value is not None and end_value is not None:
-                if end_value >= start_value:
-                    daily_consumption = round(end_value - start_value, 2)
-                    print(f"✅ Calcul de la consommation: {end_value} - {start_value} = {daily_consumption} kWh")
-
-                    # --- Publication sur MQTT avec vérification ---
-                    print(f"\nÉtape 3: Publication sur MQTT...")
-
-                    # S'abonner au topic pour vérifier la réception
-                    client.subscribe(TOPIC)
-
-                    payload = str(daily_consumption)
-                    print(f"  - Publication de la charge utile: '{payload}' sur le topic '{TOPIC}'")
-                    result = client.publish(TOPIC, payload, qos=1, retain=True)
-                    print(f"  - Résultat de la publication: Code de retour = {result.rc} (0 = succès)")
-
-                    if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                        print(f"✅ Données publiées avec succès sur le topic : {TOPIC}")
-                    else:
-                        print(f"❌ Échec de la publication. Le message n'a pas été mis en file d'attente.")
-
-                    # Petite pause pour laisser le message être reçu
-                    time.sleep(2)
-
-                else:
-                    print("⚠️ Attention: La valeur de fin est inférieure à celle de début. Le calcul est ignoré.")
+                # --- Publication sur MQTT avec confirmation ---
+                payload = str(daily_consumption)
+                print(f"  - Publication de la charge utile: '{payload}' sur le topic '{TOPIC}'")
+                result = client.publish(TOPIC, payload, qos=1, retain=MQTT_RETAIN)
+                result.wait_for_publish()
+                print(f"📩 Message publié sur {TOPIC}: {payload}")
             else:
-                print("❌ Impossible de calculer la consommation. Données manquantes.")
-
-        except Exception as e:
-            print(f"❌ Erreur inattendue lors de l'exécution du cycle: {e}")
+                print("⚠️ Fin < début, cycle ignoré")
 
         print("\n--- Cycle terminé. Mise en veille pour 24 heures... ---")
         time.sleep(24 * 3600)
-
 
 if __name__ == "__main__":
     main()
