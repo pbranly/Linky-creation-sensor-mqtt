@@ -23,8 +23,8 @@ VM_PORT = 8428
 STATE_TOPIC = "homeassistant/sensor/consommation_veille_linky/state"
 DISCOVERY_TOPIC = "homeassistant/sensor/consommation_veille_linky/config"
 
-LINKY_STATE_TOPIC = "homeassistant/sensor/linky/state"
-LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky/config"
+LINKY_STATE_TOPIC = "homeassistant/sensor/linky_test/state"
+LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
 
 VM_QUERY_START = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1d)'
 VM_QUERY_END   = 'last_over_time(sensor.linky_tempo_index_bbrhpjb_value[1d] offset 1h)'
@@ -118,9 +118,9 @@ def main():
     client.publish(DISCOVERY_TOPIC, json.dumps(discovery_payload), retain=True)
     print(f"📡 Message Discovery publié sur {DISCOVERY_TOPIC}")
 
-    # --- Discovery HA pour sensor.linky ---
+    # --- Discovery HA pour sensor.linky_test ---
     linky_discovery_payload = {
-        "name": "Index Linky",
+        "name": "Index Linky Test",
         "state_topic": LINKY_STATE_TOPIC,
         "json_attributes_topic": LINKY_STATE_TOPIC,
         "unit_of_measurement": "kWh",
@@ -161,10 +161,10 @@ def main():
                 result.wait_for_publish()
                 print(f"📩 Message publié sur {STATE_TOPIC}: {payload}")
 
-                # --- Publication du sensor principal sensor.linky ---
+                # --- Publication du sensor principal sensor.linky_test ---
                 now = datetime.now().astimezone().isoformat()
                 linky_payload = {
-                    "entity_id": "sensor.linky",
+                    "entity_id": "sensor.linky_test",
                     "state": str(int(end_value)),   # index actuel
                     "attributes": {
                         "typeCompteur": "consommation",
