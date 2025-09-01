@@ -1,13 +1,14 @@
-version: '3.8'
+version: "3.9"
 
 services:
   data-importer:
-    build:
-      context: ./app
+    image: pbranly/linkycreationdockermqtt:debug
     container_name: linky-data-importer
     environment:
       - MQTT_HOST=192.168.0.10
       - MQTT_PORT=1883
       - VM_HOST=192.168.0.10
+      - TZ=Europe/Paris
     restart: always
-
+    command: ["python", "-u", "main.py"]  # mode unbuffered
+    tty: false
