@@ -125,7 +125,7 @@ def main():
         "json_attributes_topic": LINKY_STATE_TOPIC,
         "unit_of_measurement": "kWh",
         "icon": "mdi:counter",
-        "unique_id": "linky_index_sensor",
+        "unique_id": "linky_index_sensor_test",
         "device": {
             "identifiers": ["linky"],
             "name": "Compteur Linky",
@@ -164,7 +164,6 @@ def main():
                 # --- Publication du sensor principal sensor.linky_test ---
                 now = datetime.now().astimezone().isoformat()
                 linky_payload = {
-                    "entity_id": "sensor.linky_test",
                     "state": str(int(end_value)),   # index actuel
                     "attributes": {
                         "typeCompteur": "consommation",
