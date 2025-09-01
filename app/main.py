@@ -120,19 +120,20 @@ def main():
 
     # --- Discovery HA pour sensor.linky_test ---
     linky_discovery_payload = {
-        "name": "Index Linky Test",
-        "state_topic": LINKY_STATE_TOPIC,
-        "json_attributes_topic": LINKY_STATE_TOPIC,
-        "unit_of_measurement": "kWh",
-        "icon": "mdi:counter",
-        "unique_id": "linky_index_sensor_test",
-        "device": {
-            "identifiers": ["linky"],
-            "name": "Compteur Linky",
-            "manufacturer": "EDF",
-            "model": "Linky"
-        }
+    "name": "Linky Test",
+    "state_topic": LINKY_STATE_TOPIC,
+    "value_template": "{{ value_json.state }}",   # dit à HA où prendre l'état
+    "json_attributes_topic": LINKY_STATE_TOPIC,  # dit à HA d'utiliser le reste du JSON comme attributs
+    "unit_of_measurement": "kWh",
+    "icon": "mdi:counter",
+    "unique_id": "linky_test_sensor",
+    "device": {
+        "identifiers": ["linky"],
+        "name": "Compteur Linky",
+        "manufacturer": "EDF",
+        "model": "Linky"
     }
+}
     client.publish(LINKY_DISCOVERY_TOPIC, json.dumps(linky_discovery_payload), retain=True)
     print(f"📡 Message Discovery publié sur {LINKY_DISCOVERY_TOPIC}")
 
