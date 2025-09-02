@@ -99,6 +99,8 @@ def build_linky_payload_exact():
         "dailyweek_costHP": [0.7,0.7,0.6,0.8,0.8,0.6,0.8],
         "dailyweek_HC": [2.0,2.1,1.9,2.2,2.0,2.1,2.0],
         "daily_cost": 0.6000000000000001
+        "yesterday_HP": 2.89
+        "yesterday_HC": 1.36
         "dailyweek_HP": [3.1,3.0,3.2,3.1,3.0,3.1,3.0],
         "dailyweek_MP": [7,6,8,7,6,7,7],
         "dailyweek_MP_over": [False, False, True, False, False, True, False],
