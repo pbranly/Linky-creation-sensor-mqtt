@@ -36,9 +36,6 @@ MQTT_RETAIN = True
 # =======================
 # MQTT Topics
 # =======================
-STATE_TOPIC = "homeassistant/sensor/consommation_veille_linky/state"
-DISCOVERY_TOPIC = "homeassistant/sensor/consommation_veille_linky/config"
-
 LINKY_STATE_TOPIC = "homeassistant/sensor/linky_test/state"
 LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
 
@@ -232,11 +229,7 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "yesterday_evolution": -10,
         "daily": daily,
         "dailyweek": dailyweek_dates,
-        "dailyweek_cost": [1.2,1.3,1.1,1.4,1.3,1.2,1.3],
-        "dailyweek_costHC": [0.5,0.6,0.5,0.6,0.5,0.6,0.5],
-        "dailyweek_costHP": [0.7,0.7,0.6,0.8,0.8,0.6,0.8],
         "dailyweek_HC": hc,
-        "daily_cost": 0.6,
         "yesterday_HP": hp[1] if len(hp) > 1 else 0,
         "yesterday_HC": hc[1] if len(hc) > 1 else 0,
         "dailyweek_HP": hp,
@@ -280,17 +273,9 @@ def main():
         print("⛔ Timeout MQTT")
         sys.exit(1)
 
-    # Discovery
-    discovery_payload = {
-        "name": "Consommation veille Linky",
-        "state_topic": STATE_TOPIC,
-        "unit_of_measurement": "kWh",
-        "icon": "mdi:flash",
-        "unique_id": "linky_veille_sensor",
-        "device": {"identifiers": ["linky"], "name": "Compteur Linky", "manufacturer": "Enedis", "model": "Linky"}
-    }
-    client.publish(DISCOVERY_TOPIC, json.dumps(discovery_payload), qos=1, retain=True)
-
+    # =======================
+    # Discovery Linky Test seulement
+    # =======================
     linky_discovery_payload = {
         "name": "Linky Test",
         "state_topic": LINKY_STATE_TOPIC,
@@ -322,10 +307,7 @@ def main():
         print(f"📊 dailyweek_HC = {dailyweek_HC}")
 
         dailyweek_MP, dailyweek_MP_time = fetch_daily_max_power(VM_HOST, VM_PORT, METRIC_NAMEpcons, days=7)
-
-        # ✅ Conversion VA → kVA
-        dailyweek_MP = [round(val / 1000, 3) for val in dailyweek_MP]
-
+        dailyweek_MP = [round(val / 1000, 3) for val in dailyweek_MP]  # VA → kVA
         print(f"⚡ dailyweek_MP (kVA) = {dailyweek_MP}")
         print(f"⏰ dailyweek_MP_time = {dailyweek_MP_time}")
 
