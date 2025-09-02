@@ -72,47 +72,88 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
 # =======================
 # JSON principal (SIMPLIFIÉ)
 # =======================
-def build_linky_payload_static():
-    """Construit le JSON simplifié pour content-card-linky."""
+def build_linky_payload_exact():
     return {
-        "typeCompteur": "consommation",
-        "unit_of_measurement": "kWh",
-
-        "yesterday": 15.3,
-        "day_2": 14.7,
-        "yesterday_HC": 6.8,
-        "yesterday_HP": 8.5,
-        "peak_offpeak_percent": 55,
-
-        "current_week": 98.6,
-        "last_week": 95.2,
-
-        "current_month": 420.4,
-        "last_month": 410.0,
-        "current_month_last_year": 395.7,
-        "last_month_last_year": 385.2,
-
-        "current_year": 3520,
-        "current_year_last_year": 3385,
-
-        "daily": [15.3, 14.7, 16.1, 13.9, 15.0, 14.2, 15.8],
-        "dailyweek": "2025-08-26,2025-08-27,2025-08-28,2025-08-29,2025-08-30,2025-08-31,2025-09-01",
-
-        "dailyweek_cost": "2.73,2.62,2.85,2.48,2.70,2.55,2.82",
-        "dailyweek_costHC": "1.05,0.98,1.12,0.95,1.01,0.97,1.10",
-        "dailyweek_costHP": "1.68,1.64,1.73,1.53,1.69,1.58,1.72",
-
-        "dailyweek_HC": "6.8,6.5,7.0,6.3,6.7,6.4,6.9",
-        "dailyweek_HP": "8.5,8.2,9.1,7.6,8.3,7.8,8.9",
-
-        "dailyweek_MP": "6.0,6.2,5.8,6.5,6.1,6.3,6.4",
-        "dailyweek_MP_over": "false,false,false,true,false,false,false",
-        "dailyweek_MP_time": "2025-08-26T19:30:00,2025-08-27T19:15:00,2025-08-28T19:10:00,2025-08-29T19:00:00,2025-08-30T18:50:00,2025-08-31T19:40:00,2025-09-01T19:20:00",
-
-        "dailyweek_Tempo": "BLUE,BLUE,WHITE,WHITE,RED,BLUE,WHITE",
-
+        "yesterdayDate": "2025-09-01",
+        "yesterday": 0,
         "serviceEnedis": "myElectricalData",
-        "friendly_name": "Linky - Consommation"
+        "yesterdayLastYearDate": "2024-09-02",
+        "yesterdayLastYear": 4.06,
+        "daily": [0, 7.31, 4.72, 4.44, 4.36, 4.35, 4.35],
+        "current_week": 29.55,
+        "last_week": 38.47,
+        "day_1": 0,
+        "day_2": 7.31,
+        "day_3": 4.72,
+        "day_4": 4.44,
+        "day_5": 4.36,
+        "day_6": 4.35,
+        "day_7": 4.35,
+        "current_week_last_year": 28.54,
+        "last_month": 185.13,
+        "current_month": 0,
+        "current_month_last_year": 4.06,
+        "last_month_last_year": 168.95,
+        "last_year": 286.11,
+        "current_year": 1775.17,
+        "current_year_last_year": 1763.92,
+        "dailyweek": ["2025-09-01","2025-08-31","2025-08-30","2025-08-29","2025-08-28","2025-08-27","2025-08-26"],
+        "dailyweek_cost": [0.6,1.1,0.7,0.6,0.6,0.6,0.6],
+        "dailyweek_costHP": [0.4,0.9,0.5,0.4,0.4,0.4,0.4],
+        "dailyweek_HP": [2.89,5.83,3.18,2.97,2.92,2.9,2.91],
+        "dailyweek_costHC": [0.2,0.2,0.2,0.2,0.2,0.2,0.2],
+        "dailyweek_HC": [1.36,1.46,1.55,1.47,1.43,1.44,1.43],
+        "daily_cost": 0.6000000000000001,
+        "yesterday_HP_cost": 0.9,
+        "yesterday_HP": 2.89,
+        "day_1_HP": 2898,
+        "day_2_HP": 5831,
+        "day_3_HP": 3187,
+        "day_4_HP": 2976,
+        "day_5_HP": 2920,
+        "day_6_HP": 2909,
+        "day_7_HP": 2916,
+        "yesterday_HC_cost": 0.2,
+        "yesterday_HC": 1.36,
+        "day_1_HC": 1362,
+        "day_2_HC": 1466,
+        "day_3_HC": 1555,
+        "day_4_HC": 1476,
+        "day_5_HC": 1434,
+        "day_6_HC": 1449,
+        "day_7_HC": 1438,
+        "peak_offpeak_percent": 54.84,
+        "yesterdayConsumptionMaxPower": 0,
+        "dailyweek_MP": [0,3.27,1.71,0.33,0.32,0.32,0.35],
+        "dailyweek_MP_time": ["2025-09-01 00:00:00","2025-08-31 10:55:08","2025-08-30 09:04:30","2025-08-29 22:08:53","2025-08-28 22:03:52","2025-08-27 22:15:09","2025-08-26 20:45:29"],
+        "dailyweek_MP_over": ["false","false","false","false","false","false","false"],
+        "dailyweek_Tempo": ["BLUE","BLUE","BLUE","BLUE","BLUE","BLUE","BLUE"],
+        "monthly_evolution": 9.58,
+        "current_week_evolution": -23.18,
+        "current_month_evolution": -100,
+        "yesterday_evolution": -100,
+        "yearly_evolution": 0.64,
+        "errorLastCall": "",
+        "errorLastCallInterne": "",
+        "current_week_number": "36",
+        "offpeak_hours_enedis": "Lundi (22H00-6H00);Mardi (22H00-6H00);Mercredi (22H00-6H00);Jeudi (22H00-6H00);Vendredi (22H00-6H00);Samedi (22H00-6H00);Dimanche (22H00-6H00);",
+        "offpeak_hours": [
+            [[ "22H00", "6H00" ]],
+            [[ "22H00", "6H00" ]],
+            [[ "22H00", "6H00" ]],
+            [[ "22H00", "6H00" ]],
+            [[ "22H00", "6H00" ]],
+            [[ "22H00", "6H00" ]],
+            [[ "22H00", "6H00" ]]
+        ],
+        "subscribed_power": "6 kVA",
+        "version": "0.13.2",
+        "activationDate": None,
+        "lastUpdate": "2025-09-02 03:37:02",
+        "timeLastCall": "2025-09-02 03:37:02",
+        "unit_of_measurement": "kWh",
+        "device_class": "energy",
+        "friendly_name": "Linky 01129377636898 consumption"
     }
 # =======================
 # SCRIPT PRINCIPAL
