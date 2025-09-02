@@ -23,6 +23,12 @@ VM_HOST = os.getenv("VM_HOST", "127.0.0.1")
 VM_PORT = int(os.getenv("VM_PORT") or 8428)
 
 METRIC_NAME = "sensor.linky_tempo_index_bbrhpjb_value"
+METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb_value"
+METRIC_NAMEhcjb = "sensor.linky_tempo_index_bbrhcjb_value"
+METRIC_NAMEhpjw = "sensor.linky_tempo_index_bbrhpjw_value"
+METRIC_NAMEhcjw = "sensor.linky_tempo_index_bbrhcjw_value"
+METRIC_NAMEhpjr = "sensor.linky_tempo_index_bbrhpjr_value"
+METRIC_NAMEhcjt = "sensor.linky_tempo_index_bbrhcjr_value"
 
 MQTT_RETAIN = True
 
