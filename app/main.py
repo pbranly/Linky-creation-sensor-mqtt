@@ -322,7 +322,11 @@ def main():
         print(f"📊 dailyweek_HC = {dailyweek_HC}")
 
         dailyweek_MP, dailyweek_MP_time = fetch_daily_max_power(VM_HOST, VM_PORT, METRIC_NAMEpcons, days=7)
-        print(f"⚡ dailyweek_MP = {dailyweek_MP}")
+
+        # ✅ Conversion VA → kVA
+        dailyweek_MP = [round(val / 1000, 3) for val in dailyweek_MP]
+
+        print(f"⚡ dailyweek_MP (kVA) = {dailyweek_MP}")
         print(f"⏰ dailyweek_MP_time = {dailyweek_MP_time}")
 
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
