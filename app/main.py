@@ -79,30 +79,31 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
 def fetch_daily_series(vm_host, vm_port, metric_name, days=7):
     """
     Retourne une liste de consommations journalières pour les X derniers jours.
-    Pour chaque jour : last - first.
+    Chaque jour = last - first.
+    Ordre retourné : du plus ancien au plus récent.
     """
     url = f"http://{vm_host}:{vm_port}/api/v1/query"
     results = []
 
-    for i in range(days, 0, -1):  # du plus ancien au plus récent
+    for i in range(days, 0, -1):  # ex: 7d, 6d, ..., 1d
         queries = {
             "first": f"first_over_time({metric_name}[1d] offset {i}d)",
             "last":  f"last_over_time({metric_name}[1d] offset {i}d)"
         }
         try:
-            day_vals = {}
-            for key, query in queries.items():
-                r = requests.get(url, params={'query': query}, timeout=10)
-                r.raise_for_status()
-                data = r.json()
-                res_list = data.get("data", {}).get("result", [])
-                if res_list and "value" in res_list[0]:
-                    day_vals[key] = float(res_list[0]["value"][1])
-                else:
-                    day_vals[key] = None
+            r_first = requests.get(url, params={'query': queries["first"]}, timeout=10)
+            r_last = requests.get(url, params={'query': queries["last"]}, timeout=10)
+            r_first.raise_for_status()
+            r_last.raise_for_status()
 
-            if day_vals.get("first") is not None and day_vals.get("last") is not None:
-                results.append(round(day_vals["last"] - day_vals["first"], 2))
+            data_first = r_first.json()
+            data_last = r_last.json()
+
+            v_first = float(data_first["data"]["result"][0]["value"][1]) if data_first["data"]["result"] else None
+            v_last = float(data_last["data"]["result"][0]["value"][1]) if data_last["data"]["result"] else None
+
+            if v_first is not None and v_last is not None:
+                results.append(round(v_last - v_first, 2))
             else:
                 results.append(None)
         except Exception as e:
@@ -253,14 +254,16 @@ def main():
         hc_jw = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjw)
         hc_jr = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjr)
 
+        # Addition des consommations par jour et inversion (jour courant à droite)
         dailyweek_hp = [
             sum(v for v in vals if v is not None)
             for vals in zip(hp_jb, hp_jw, hp_jr)
-        ]
+        ][::-1]
+
         dailyweek_hc = [
             sum(v for v in vals if v is not None)
             for vals in zip(hc_jb, hc_jw, hc_jr)
-        ]
+        ][::-1]
 
         print(f"📊 dailyweek_HP = {dailyweek_hp}")
         print(f"📊 dailyweek_HC = {dailyweek_hc}")
