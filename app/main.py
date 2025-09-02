@@ -104,7 +104,7 @@ def build_linky_payload_exact():
   "dailyweek_MP_time": ["08:15","10:30","12:45","14:00","16:15","18:30","20:45"],
   "dailyweek_Tempo": ["WHITE","WHITE","RED","BLUE","WHITE","RED","BLUE"],
   "errorLastCall": "",
-  "versionUpdateAvailable": false,
+  "versionUpdateAvailable": False,
   "versionGit": "1.0.0",
   "peak_offpeak_percent": 45
 }
