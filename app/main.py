@@ -4,7 +4,8 @@ import time
 import json
 import threading
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
+import pytz
 import paho.mqtt.client as mqtt
 
 print("--- Début de l'exécution du script Linky + VictoriaMetrics ---")
@@ -22,7 +23,6 @@ MQTT_PORT = int(os.getenv("MQTT_PORT") or 1883)
 VM_HOST = os.getenv("VM_HOST", "127.0.0.1")
 VM_PORT = int(os.getenv("VM_PORT") or 8428)
 
-METRIC_NAME = "sensor.linky_tempo_index_bbrhpjb_value"
 METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb_value"
 METRIC_NAMEhcjb = "sensor.linky_tempo_index_bbrhcjb_value"
 METRIC_NAMEhpjw = "sensor.linky_tempo_index_bbrhpjw_value"
@@ -32,9 +32,6 @@ METRIC_NAMEhcjr = "sensor.linky_tempo_index_bbrhcjr_value"
 
 MQTT_RETAIN = True
 
-# =======================
-# MQTT Topics
-# =======================
 STATE_TOPIC = "homeassistant/sensor/consommation_veille_linky/state"
 DISCOVERY_TOPIC = "homeassistant/sensor/consommation_veille_linky/config"
 
@@ -45,28 +42,22 @@ LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
 # VictoriaMetrics
 # =======================
 def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
-    """
-    Calcule la consommation de la veille comme :
-    dernière valeur de la veille - première valeur de la veille
-    """
     url = f"http://{vm_host}:{vm_port}/api/v1/query"
     queries = {
         "first": f"first_over_time({metric_name}[1d] offset 1d)",
-        "last":  f"last_over_time({metric_name}[1d] offset 1d)"
+        "last": f"last_over_time({metric_name}[1d] offset 1d)"
     }
     result = {}
     for key, query in queries.items():
         try:
-            r = requests.get(url, params={'query': query}, timeout=10)
+            r = requests.get(url, params={"query": query}, timeout=10)
             r.raise_for_status()
             data = r.json()
             res_list = data.get("data", {}).get("result", [])
             if res_list and "value" in res_list[0]:
                 result[key] = float(res_list[0]["value"][1])
-                print(f"VM: {key} value = {result[key]}")
             else:
                 result[key] = None
-                print(f"VM: pas de valeur pour {key}")
         except Exception as e:
             print(f"❌ Erreur VM query '{query}': {e}")
             result[key] = None
@@ -76,44 +67,68 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
     return round(result["last"] - result["first"], 2)
 
 
-def fetch_daily_series(vm_host, vm_port, metric_name, days=7):
+def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
     """
-    Retourne une liste de consommations journalières pour les X derniers jours.
-    Chaque jour = last - first.
-    Ordre retourné : du plus ancien au plus récent.
+    Récupère toutes les valeurs pour les 'days' derniers jours + aujourd'hui,
+    puis regroupe par journée Europe/Paris et calcule conso = max-min.
+    Retourne liste [J-6, ..., J] avec aujourd'hui inclus même si incomplet.
     """
-    url = f"http://{vm_host}:{vm_port}/api/v1/query"
-    results = []
+    tz = pytz.timezone("Europe/Paris")
+    end_dt = datetime.now(tz)
+    start_dt = end_dt - timedelta(days=days)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
 
-    for i in range(days, 0, -1):  # ex: 7d, 6d, ..., 1d
-        queries = {
-            "first": f"first_over_time({metric_name}[1d] offset {i}d)",
-            "last":  f"last_over_time({metric_name}[1d] offset {i}d)"
-        }
-        try:
-            r_first = requests.get(url, params={'query': queries["first"]}, timeout=10)
-            r_last = requests.get(url, params={'query': queries["last"]}, timeout=10)
-            r_first.raise_for_status()
-            r_last.raise_for_status()
+    url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
+    params = {
+        "query": metric_name,
+        "start": start_ts,
+        "end": end_ts,
+        "step": 60  # 1 minute, assez fin pour TIC Linky
+    }
 
-            data_first = r_first.json()
-            data_last = r_last.json()
+    try:
+        r = requests.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        res_list = data.get("data", {}).get("result", [])
+        if not res_list:
+            print(f"❌ Pas de données pour {metric_name}")
+            return [None]*days
 
-            v_first = float(data_first["data"]["result"][0]["value"][1]) if data_first["data"]["result"] else None
-            v_last = float(data_last["data"]["result"][0]["value"][1]) if data_last["data"]["result"] else None
+        values = [(datetime.fromtimestamp(float(v[0]), tz), float(v[1])) for v in res_list[0]["values"]]
 
-            if v_first is not None and v_last is not None:
-                results.append(round(v_last - v_first, 2))
+        # Grouper par jour Europe/Paris
+        daily = {}
+        for dt, val in values:
+            day = dt.date()
+            if day not in daily:
+                daily[day] = []
+            daily[day].append(val)
+
+        # Trier les jours et calculer max-min par jour
+        sorted_days = sorted(daily.keys())
+        daily_conso = []
+        for day in sorted_days[-days:]:
+            vals = daily[day]
+            if vals:
+                daily_conso.append(round(max(vals)-min(vals),2))
             else:
-                results.append(None)
-        except Exception as e:
-            print(f"❌ Erreur VM daily_series '{metric_name}' jour {i}: {e}")
-            results.append(None)
+                daily_conso.append(None)
 
-    return results
+        # Compléter à gauche si moins de 'days' jours
+        while len(daily_conso) < days:
+            daily_conso.insert(0, None)
+
+        return daily_conso
+
+    except Exception as e:
+        print(f"❌ Erreur fetch_daily_values '{metric_name}': {e}")
+        return [None]*days
+
 
 # =======================
-# JSON principal (SIMPLIFIÉ ET EXACT)
+# JSON principal (COMPLET)
 # =======================
 def build_linky_payload_exact():
     return {
@@ -163,6 +178,7 @@ def build_linky_payload_exact():
         "peak_offpeak_percent": 45
     }
 
+
 # =======================
 # SCRIPT PRINCIPAL
 # =======================
@@ -192,7 +208,7 @@ def main():
         print("⛔ Timeout MQTT")
         sys.exit(1)
 
-    # --- Discovery consommation veille
+    # --- Discovery consommation veille ---
     discovery_payload = {
         "name": "Consommation veille Linky",
         "state_topic": STATE_TOPIC,
@@ -209,7 +225,7 @@ def main():
     client.publish(DISCOVERY_TOPIC, json.dumps(discovery_payload), qos=1, retain=True)
     print(f"📡 Discovery publié: {DISCOVERY_TOPIC}")
 
-    # --- Discovery sensor.linky_test
+    # --- Discovery sensor.linky_test ---
     linky_discovery_payload = {
         "name": "Linky Test",
         "state_topic": LINKY_STATE_TOPIC,
@@ -235,38 +251,29 @@ def main():
     print("\n--- Boucle MQTT démarrée ---")
     while True:
         print("\n--- Début du cycle quotidien ---")
-        consommation_veille = fetch_first_last_yesterday(VM_HOST, VM_PORT, METRIC_NAME)
-
-        if consommation_veille is None:
-            print("❌ Données VM manquantes, cycle ignoré")
-        else:
-            # --- Publier consommation veille ---
+        consommation_veille = fetch_first_last_yesterday(VM_HOST, VM_PORT, METRIC_NAMEhpjb)
+        if consommation_veille is not None:
             result = client.publish(STATE_TOPIC, str(consommation_veille), qos=1, retain=MQTT_RETAIN)
             result.wait_for_publish()
-            print(f"📩 Consommation veille publiée: {consommation_veille} kWh sur {STATE_TOPIC}")
+            print(f"📩 Consommation veille publiée: {consommation_veille} kWh")
 
-        # --- Conso journalière HP et HC (toutes couleurs confondues) ---
-        hp_jb = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhpjb)
-        hp_jw = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhpjw)
-        hp_jr = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhpjr)
+        # --- Conso journalière HP et HC ---
+        hp_jb = fetch_daily_values(VM_HOST, VM_PORT, METRIC_NAMEhpjb)
+        hp_jw = fetch_daily_values(VM_HOST, VM_PORT, METRIC_NAMEhpjw)
+        hp_jr = fetch_daily_values(VM_HOST, VM_PORT, METRIC_NAMEhpjr)
 
-        hc_jb = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjb)
-        hc_jw = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjw)
-        hc_jr = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjr)
+        hc_jb = fetch_daily_values(VM_HOST, VM_PORT, METRIC_NAMEhcjb)
+        hc_jw = fetch_daily_values(VM_HOST, VM_PORT, METRIC_NAMEhcjw)
+        hc_jr = fetch_daily_values(VM_HOST, VM_PORT, METRIC_NAMEhcjr)
 
-        # Addition des consommations par jour et inversion (jour courant à droite)
-        dailyweek_hp = [
-            sum(v for v in vals if v is not None)
-            for vals in zip(hp_jb, hp_jw, hp_jr)
-        ][::-1]
+        # Addition par jour pour HP et HC
+        dailyweek_HP = [sum(v for v in vals if v is not None)
+                        for vals in zip(hp_jb, hp_jw, hp_jr)]
+        dailyweek_HC = [sum(v for v in vals if v is not None)
+                        for vals in zip(hc_jb, hc_jw, hc_jr)]
 
-        dailyweek_hc = [
-            sum(v for v in vals if v is not None)
-            for vals in zip(hc_jb, hc_jw, hc_jr)
-        ][::-1]
-
-        print(f"📊 dailyweek_HP = {dailyweek_hp}")
-        print(f"📊 dailyweek_HC = {dailyweek_hc}")
+        print(f"📊 dailyweek_HP = {dailyweek_HP}")
+        print(f"📊 dailyweek_HC = {dailyweek_HC}")
 
         # --- Publier JSON complet sensor.linky_test ---
         now = datetime.now().astimezone().isoformat()
@@ -280,6 +287,7 @@ def main():
 
         print("\n--- Cycle terminé. Mise en veille pour 24h ---")
         time.sleep(24 * 3600)
+
 
 # =======================
 # Lancement script
