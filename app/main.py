@@ -75,6 +75,42 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
         return None
     return round(result["last"] - result["first"], 2)
 
+
+def fetch_daily_series(vm_host, vm_port, metric_name, days=7):
+    """
+    Retourne une liste de consommations journalières pour les X derniers jours.
+    Pour chaque jour : last - first.
+    """
+    url = f"http://{vm_host}:{vm_port}/api/v1/query"
+    results = []
+
+    for i in range(days, 0, -1):  # du plus ancien au plus récent
+        queries = {
+            "first": f"first_over_time({metric_name}[1d] offset {i}d)",
+            "last":  f"last_over_time({metric_name}[1d] offset {i}d)"
+        }
+        try:
+            day_vals = {}
+            for key, query in queries.items():
+                r = requests.get(url, params={'query': query}, timeout=10)
+                r.raise_for_status()
+                data = r.json()
+                res_list = data.get("data", {}).get("result", [])
+                if res_list and "value" in res_list[0]:
+                    day_vals[key] = float(res_list[0]["value"][1])
+                else:
+                    day_vals[key] = None
+
+            if day_vals.get("first") is not None and day_vals.get("last") is not None:
+                results.append(round(day_vals["last"] - day_vals["first"], 2))
+            else:
+                results.append(None)
+        except Exception as e:
+            print(f"❌ Erreur VM daily_series '{metric_name}' jour {i}: {e}")
+            results.append(None)
+
+    return results
+
 # =======================
 # JSON principal (SIMPLIFIÉ ET EXACT)
 # =======================
@@ -207,6 +243,27 @@ def main():
             result = client.publish(STATE_TOPIC, str(consommation_veille), qos=1, retain=MQTT_RETAIN)
             result.wait_for_publish()
             print(f"📩 Consommation veille publiée: {consommation_veille} kWh sur {STATE_TOPIC}")
+
+        # --- Conso journalière HP et HC (toutes couleurs confondues) ---
+        hp_jb = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhpjb)
+        hp_jw = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhpjw)
+        hp_jr = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhpjr)
+
+        hc_jb = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjb)
+        hc_jw = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjw)
+        hc_jr = fetch_daily_series(VM_HOST, VM_PORT, METRIC_NAMEhcjr)
+
+        dailyweek_hp = [
+            sum(v for v in vals if v is not None)
+            for vals in zip(hp_jb, hp_jw, hp_jr)
+        ]
+        dailyweek_hc = [
+            sum(v for v in vals if v is not None)
+            for vals in zip(hc_jb, hc_jw, hc_jr)
+        ]
+
+        print(f"📊 dailyweek_HP = {dailyweek_hp}")
+        print(f"📊 dailyweek_HC = {dailyweek_hc}")
 
         # --- Publier JSON complet sensor.linky_test ---
         now = datetime.now().astimezone().isoformat()
