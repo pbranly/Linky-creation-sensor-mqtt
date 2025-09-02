@@ -70,9 +70,9 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
     return round(result["last"] - result["first"], 2)
 
 # =======================
-# JSON principal (SIMPLIFIÉ)
+# JSON principal (EXACT)
 # =======================
-def build_linky_payload_exact():
+def build_linky_payload_static():
     return {
         "yesterdayDate": "2025-09-01",
         "yesterday": 0,
@@ -138,13 +138,13 @@ def build_linky_payload_exact():
         "current_week_number": "36",
         "offpeak_hours_enedis": "Lundi (22H00-6H00);Mardi (22H00-6H00);Mercredi (22H00-6H00);Jeudi (22H00-6H00);Vendredi (22H00-6H00);Samedi (22H00-6H00);Dimanche (22H00-6H00);",
         "offpeak_hours": [
-            [[ "22H00", "6H00" ]],
-            [[ "22H00", "6H00" ]],
-            [[ "22H00", "6H00" ]],
-            [[ "22H00", "6H00" ]],
-            [[ "22H00", "6H00" ]],
-            [[ "22H00", "6H00" ]],
-            [[ "22H00", "6H00" ]]
+            [["22H00","6H00"]],
+            [["22H00","6H00"]],
+            [["22H00","6H00"]],
+            [["22H00","6H00"]],
+            [["22H00","6H00"]],
+            [["22H00","6H00"]],
+            [["22H00","6H00"]]
         ],
         "subscribed_power": "6 kVA",
         "version": "0.13.2",
@@ -155,6 +155,7 @@ def build_linky_payload_exact():
         "device_class": "energy",
         "friendly_name": "Linky 01129377636898 consumption"
     }
+
 # =======================
 # SCRIPT PRINCIPAL
 # =======================
@@ -188,70 +189,4 @@ def main():
     discovery_payload = {
         "name": "Consommation veille Linky",
         "state_topic": STATE_TOPIC,
-        "unit_of_measurement": "kWh",
-        "icon": "mdi:flash",
-        "unique_id": "linky_veille_sensor",
-        "device": {
-            "identifiers": ["linky"],
-            "name": "Compteur Linky",
-            "manufacturer": "Enedis",
-            "model": "Linky"
-        }
-    }
-    client.publish(DISCOVERY_TOPIC, json.dumps(discovery_payload), qos=1, retain=True)
-    print(f"📡 Discovery publié: {DISCOVERY_TOPIC}")
-
-    # --- Discovery sensor.linky_test
-    linky_discovery_payload = {
-        "name": "Linky Test",
-        "state_topic": LINKY_STATE_TOPIC,
-        "value_template": "{{ value_json.current_year }}",
-        "json_attributes_topic": LINKY_STATE_TOPIC,
-        "unit_of_measurement": "kWh",
-        "device_class": "energy",
-        "icon": "mdi:counter",
-        "unique_id": "linky_test_sensor",
-        "device": {
-            "identifiers": ["linky"],
-            "name": "Compteur Linky",
-            "manufacturer": "Enedis",
-            "model": "Linky"
-        }
-    }
-    client.publish(LINKY_DISCOVERY_TOPIC, json.dumps(linky_discovery_payload), qos=1, retain=True)
-    print(f"📡 Discovery publié: {LINKY_DISCOVERY_TOPIC}")
-
-    # =======================
-    # Boucle principale
-    # =======================
-    print("\n--- Boucle MQTT démarrée ---")
-    while True:
-        print("\n--- Début du cycle quotidien ---")
-        consommation_veille = fetch_first_last_yesterday(VM_HOST, VM_PORT, METRIC_NAME)
-
-        if consommation_veille is None:
-            print("❌ Données VM manquantes, cycle ignoré")
-        else:
-            # --- Publier consommation veille ---
-            result = client.publish(STATE_TOPIC, str(consommation_veille), qos=1, retain=MQTT_RETAIN)
-            result.wait_for_publish()
-            print(f"📩 Consommation veille publiée: {consommation_veille} kWh sur {STATE_TOPIC}")
-
-        # --- Publier JSON complet sensor.linky_test ---
-        now = datetime.now().astimezone().isoformat()
-        linky_payload = build_linky_payload_static()
-        linky_payload["lastUpdate"] = now
-        linky_payload["timeLastCall"] = now
-
-        result2 = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
-        result2.wait_for_publish()
-        print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
-
-        print("\n--- Cycle terminé. Mise en veille pour 24h ---")
-        time.sleep(24 * 3600)
-
-# =======================
-# Lancement script
-# =======================
-if __name__ == "__main__":
-    main()
+        "unit_of_measurement
