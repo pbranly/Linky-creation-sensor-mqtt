@@ -74,7 +74,7 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
 # =======================
 def build_linky_payload_exact():
     return {
-        "serviceEnedis": "myElectricalData",
+        "serviceEnedis": "Via Linky Tic",
         "typeCompteur": "consommation",
         "unit_of_measurement": "kWh",
         "current_year": 14560,
