@@ -100,7 +100,7 @@ def build_linky_payload_exact():
   "dailyweek_HC": [2.0,2.1,1.9,2.2,2.0,2.1,2.0],
   "dailyweek_HP": [3.1,3.0,3.2,3.1,3.0,3.1,3.0],
   "dailyweek_MP": [7,6,8,7,6,7,7],
-  "dailyweek_MP_over": [false,false,true,false,false,true,false],
+  "dailyweek_MP_over": [False, False, True, False, False, True, False],
   "dailyweek_MP_time": ["08:15","10:30","12:45","14:00","16:15","18:30","20:45"],
   "dailyweek_Tempo": ["WHITE","WHITE","RED","BLUE","WHITE","RED","BLUE"],
   "errorLastCall": "",
