@@ -29,6 +29,7 @@ METRIC_NAMEhpjw = "sensor.linky_tempo_index_bbrhpjw_value"
 METRIC_NAMEhcjw = "sensor.linky_tempo_index_bbrhcjw_value"
 METRIC_NAMEhpjr = "sensor.linky_tempo_index_bbrhpjr_value"
 METRIC_NAMEhcjr = "sensor.linky_tempo_index_bbrhcjr_value"
+METRIC_NAMEpcons= "sensor.linky_puissance_consommee_value"
 
 MQTT_RETAIN = True
 
