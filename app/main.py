@@ -75,9 +75,6 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
 def build_linky_payload_static():
     """Construit le JSON EXACTEMENT conforme à l’exemple fourni (valeurs en dur)."""
     return {
-  "entity_id": "sensor.linky",
-  "state": "24567",
-  "attributes": {
     "typeCompteur": "consommation",
     "unit_of_measurement": "kWh",
 
@@ -117,9 +114,7 @@ def build_linky_payload_static():
     "serviceEnedis": "myElectricalData",
 
     "friendly_name": "Linky - Consommation"
-  }
-}
-
+  
 # =======================
 # SCRIPT PRINCIPAL
 # =======================
