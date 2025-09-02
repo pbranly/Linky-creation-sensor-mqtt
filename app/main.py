@@ -79,7 +79,7 @@ def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
         "query": metric_name,
         "start": start_ts,
         "end": end_ts,
-        "step": 60  # 1 minute, assez fin pour TIC Linky
+        "step": 60  # pas d’1 minute pour TIC Linky
     }
 
     try:
@@ -89,7 +89,7 @@ def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
         res_list = data.get("data", {}).get("result", [])
         if not res_list:
             print(f"❌ Pas de données pour {metric_name}")
-            return [None]*days
+            return [0]*days
 
         values = [(datetime.fromtimestamp(float(v[0]), tz), float(v[1])) for v in res_list[0]["values"]]
 
@@ -100,35 +100,35 @@ def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
                 daily[day] = []
             daily[day].append(val)
 
-        sorted_days = sorted(daily.keys())
+        sorted_days = sorted(daily.keys(), reverse=True)  # aujourd'hui à gauche
         daily_conso = []
-        for day in sorted_days[-days:]:
+        for day in sorted_days[:days]:
             vals = daily[day]
             if vals:
                 daily_conso.append(round(max(vals)-min(vals),2))
             else:
-                daily_conso.append(None)
+                daily_conso.append(0)
 
         while len(daily_conso) < days:
-            daily_conso.insert(0, None)
+            daily_conso.append(0)
 
         return daily_conso
 
     except Exception as e:
         print(f"❌ Erreur fetch_daily_values '{metric_name}': {e}")
-        return [None]*days
+        return [0]*days
 
 
 # =======================
 # JSON principal (COMPLET)
 # =======================
-def build_linky_payload_exact():
+def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None):
     tz = pytz.timezone("Europe/Paris")
     today = datetime.now(tz).date()
-    # Générer les 7 derniers jours avec aujourd'hui à droite
-    dailyweek_dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in reversed(range(7))]
+    # Générer 7 jours : aujourd’hui à gauche
+    dailyweek_dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
 
-    return {
+    payload = {
         "serviceEnedis": "myElectricalData",
         "typeCompteur": "consommation",
         "unit_of_measurement": "kWh",
@@ -156,7 +156,8 @@ def build_linky_payload_exact():
         "daily_cost": 0.6000000000000001,
         "yesterday_HP": 2.89,
         "yesterday_HC": 1.36,
-        "dailyweek_HP": [3.1,3.0,3.2,3.1,3.0,3.1,3.0],
+        "dailyweek_HP": dailyweek_HP if dailyweek_HP else [0]*7,
+        "dailyweek_HC": dailyweek_HC if dailyweek_HC else [0]*7,
         "dailyweek_MP": [7,6,8,7,6,7,7],
         "dailyweek_MP_over": [False, False, True, False, False, True, False],
         "dailyweek_MP_time": [
@@ -174,6 +175,8 @@ def build_linky_payload_exact():
         "versionGit": "1.0.0",
         "peak_offpeak_percent": 45
     }
+
+    return payload
 
 
 # =======================
@@ -264,22 +267,17 @@ def main():
         hc_jr = fetch_daily_values(VM_HOST, VM_PORT, METRIC_NAMEhcjr)
 
         # Addition par jour pour HP et HC
-        dailyweek_HP = [sum(v for v in vals if v is not None)
-                        for vals in zip(hp_jb, hp_jw, hp_jr)]
-        dailyweek_HC = [sum(v for v in vals if v is not None)
-                        for vals in zip(hc_jb, hc_jw, hc_jr)]
+        dailyweek_HP = [sum(v for v in vals if v is not None) for vals in zip(hp_jb, hp_jw, hp_jr)]
+        dailyweek_HC = [sum(v for v in vals if v is not None) for vals in zip(hc_jb, hc_jw, hc_jr)]
 
         print(f"📊 dailyweek_HP = {dailyweek_HP}")
         print(f"📊 dailyweek_HC = {dailyweek_HC}")
 
         # --- Publier JSON complet sensor.linky_test ---
         now = datetime.now().astimezone().isoformat()
-        linky_payload = build_linky_payload_exact()
+        linky_payload = build_linky_payload_exact(dailyweek_HP, dailyweek_HC)
         linky_payload["lastUpdate"] = now
         linky_payload["timeLastCall"] = now
-        # Injecter les listes calculées
-        linky_payload["dailyweek_HP"] = dailyweek_HP
-        linky_payload["dailyweek_HC"] = dailyweek_HC
 
         result2 = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
         result2.wait_for_publish()
@@ -289,8 +287,5 @@ def main():
         time.sleep(24 * 3600)
 
 
-# =======================
-# Lancement script
-# =======================
 if __name__ == "__main__":
     main()
