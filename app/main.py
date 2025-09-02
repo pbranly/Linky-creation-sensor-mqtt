@@ -68,11 +68,6 @@ def fetch_first_last_yesterday(vm_host, vm_port, metric_name):
 
 
 def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
-    """
-    Récupère toutes les valeurs pour les 'days' derniers jours + aujourd'hui,
-    puis regroupe par journée Europe/Paris et calcule conso = max-min.
-    Retourne liste [J-6, ..., J] avec aujourd'hui inclus même si incomplet.
-    """
     tz = pytz.timezone("Europe/Paris")
     end_dt = datetime.now(tz)
     start_dt = end_dt - timedelta(days=days)
@@ -98,7 +93,6 @@ def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
 
         values = [(datetime.fromtimestamp(float(v[0]), tz), float(v[1])) for v in res_list[0]["values"]]
 
-        # Grouper par jour Europe/Paris
         daily = {}
         for dt, val in values:
             day = dt.date()
@@ -106,7 +100,6 @@ def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
                 daily[day] = []
             daily[day].append(val)
 
-        # Trier les jours et calculer max-min par jour
         sorted_days = sorted(daily.keys())
         daily_conso = []
         for day in sorted_days[-days:]:
@@ -116,7 +109,6 @@ def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
             else:
                 daily_conso.append(None)
 
-        # Compléter à gauche si moins de 'days' jours
         while len(daily_conso) < days:
             daily_conso.insert(0, None)
 
@@ -131,6 +123,11 @@ def fetch_daily_values(vm_host, vm_port, metric_name, days=7):
 # JSON principal (COMPLET)
 # =======================
 def build_linky_payload_exact():
+    tz = pytz.timezone("Europe/Paris")
+    today = datetime.now(tz).date()
+    # Générer les 7 derniers jours avec aujourd'hui à droite
+    dailyweek_dates = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in reversed(range(7))]
+
     return {
         "serviceEnedis": "myElectricalData",
         "typeCompteur": "consommation",
@@ -151,7 +148,7 @@ def build_linky_payload_exact():
         "day_2": 50,
         "yesterday_evolution": -10,
         "daily": [5.1, 4.9, 5.3, 5.0, 5.2, 4.8, 5.0],
-        "dailyweek": ["2025-09-01","2025-09-02","2025-09-03","2025-09-04","2025-09-05","2025-09-06","2025-09-07"],
+        "dailyweek": dailyweek_dates,
         "dailyweek_cost": [1.2,1.3,1.1,1.4,1.3,1.2,1.3],
         "dailyweek_costHC": [0.5,0.6,0.5,0.6,0.5,0.6,0.5],
         "dailyweek_costHP": [0.7,0.7,0.6,0.8,0.8,0.6,0.8],
@@ -280,6 +277,9 @@ def main():
         linky_payload = build_linky_payload_exact()
         linky_payload["lastUpdate"] = now
         linky_payload["timeLastCall"] = now
+        # Injecter les listes calculées
+        linky_payload["dailyweek_HP"] = dailyweek_HP
+        linky_payload["dailyweek_HC"] = dailyweek_HC
 
         result2 = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
         result2.wait_for_publish()
