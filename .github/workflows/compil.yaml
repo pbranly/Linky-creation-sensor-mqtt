@@ -82,4 +82,4 @@ steps:
       echo "✅ Image construite et poussée avec succès !"
       echo "📦 ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
       echo "📦 ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-```
+      
