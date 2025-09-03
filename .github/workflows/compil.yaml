@@ -22,7 +22,6 @@ jobs:
 build-and-push:
 runs-on: ubuntu-latest
 
-```
 steps:
   # 1️⃣ Cloner le dépôt depuis la branche main
   - name: Checkout main
