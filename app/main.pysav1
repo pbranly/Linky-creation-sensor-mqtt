@@ -65,30 +65,28 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
             r.raise_for_status()
             data = r.json()
             res_list = data.get("data", {}).get("result", [])
-            if not res_list:
+            if not res_list or not res_list[0].get("values"):
                 results.append(0.0)
+                print(f"ℹ️ {metric_name} pour {day} = 0.0 (pas de données)")
                 continue
 
-            values = res_list[0].get("values", [])
-            if not values:
-                results.append(0.0)
-                continue
-
+            values = res_list[0]["values"]
+            print(f"📌 {metric_name} valeurs brutes pour {day}: {[float(v[1]) for v in values]}")
             first_val = float(values[0][1])
             last_val = float(values[-1][1])
             diff = last_val - first_val
             if diff < 0:
                 diff = 0.0
             results.append(round(diff, 2))
+            print(f"✅ {metric_name} pour {day}: first={first_val}, last={last_val}, diff={diff}")
+
         except Exception as e:
             print(f"❌ Erreur fetch_daily_for_calendar_days '{metric_name}' pour {day}: {e}")
             results.append(0.0)
 
+    print(f"📊 Résultat fetch_daily_for_calendar_days '{metric_name}': {results}")
     return results
 
-# =======================
-# Puissance max par jour (VA → kVA)
-# =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
     tz = pytz.timezone("Europe/Paris")
     now = datetime.now(tz)
@@ -117,30 +115,31 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
             if not res_list or not res_list[0].get("values"):
                 max_values.append(0)
                 max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
+                print(f"ℹ️ {metric_name} pour {day} = 0 (pas de données)")
                 continue
 
             values = res_list[0]["values"]
+            print(f"📌 {metric_name} valeurs brutes pour {day}: {[float(v[1])/1000.0 for v in values]} kVA")
             max_val = -1
             max_ts = start_ts
             for ts, val in values:
-                v = float(val)/1000.0  # conversion VA → kVA
+                v = float(val)/1000.0
                 if v > max_val:
                     max_val = v
                     max_ts = int(ts)
 
             max_values.append(round(max_val, 2))
             max_times.append(datetime.fromtimestamp(max_ts, tz=tz).strftime("%Y-%m-%d %H:%M:%S"))
+            print(f"✅ {metric_name} max pour {day}: {max_val} kVA à {max_times[-1]}")
 
         except Exception as e:
             print(f"❌ Erreur fetch_daily_max_power '{metric_name}' pour {day}: {e}")
             max_values.append(0)
             max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
 
+    print(f"📊 Résultat fetch_daily_max_power '{metric_name}': {max_values}")
     return max_values, max_times
 
-# =======================
-# Détection couleur Tempo par consommation
-# =======================
 def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
     tz = pytz.timezone("Europe/Paris")
     now = datetime.now(tz)
@@ -169,8 +168,8 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
                     data = r.json()
                     res_list = data.get("data", {}).get("result", [])
                     if res_list and res_list[0].get("values"):
-                        # si consommation > 0 alors couleur détectée
                         values = res_list[0]["values"]
+                        print(f"📌 {metric} valeurs pour {day}: {[float(v[1]) for v in values]}")
                         for _, v in values:
                             if float(v) > 0:
                                 detected_color = color
@@ -183,7 +182,9 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
                 break
 
         colors.append(detected_color)
+        print(f"🎨 Couleur détectée pour {day}: {detected_color}")
 
+    print(f"📊 Résultat fetch_daily_tempo_colors: {colors}")
     return colors
 
 # =======================
@@ -293,7 +294,6 @@ def main():
         now_dt = datetime.now(pytz.timezone("Europe/Paris"))
         today = now_dt.date()
 
-        # Recalcul complet si changement de jour
         if today != current_day:
             print("🔄 Changement de jour détecté, rafraîchissement complet")
             current_day = today
@@ -329,6 +329,7 @@ def main():
         print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
 
         # Attente avant prochaine mise à jour
+        print(f"⏱️ Mise à jour suivante dans {PUBLISH_INTERVAL} secondes\n")
         time.sleep(PUBLISH_INTERVAL)
 
 
