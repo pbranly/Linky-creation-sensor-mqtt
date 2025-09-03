@@ -23,9 +23,6 @@ MQTT_PORT = int(os.getenv("MQTT_PORT") or 1883)
 VM_HOST = os.getenv("VM_HOST", "127.0.0.1")
 VM_PORT = int(os.getenv("VM_PORT") or 8428)
 
-PUBLISH_INTERVAL = int(os.getenv("PUBLISH_INTERVAL") or 300)  # par défaut 5 min
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-
 METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb_value"
 METRIC_NAMEhcjb = "sensor.linky_tempo_index_bbrhcjb_value"
 METRIC_NAMEhpjw = "sensor.linky_tempo_index_bbrhpjw_value"
@@ -54,7 +51,11 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
     for i in range(days):
         day = today - timedelta(days=i)
         start_dt = datetime(year=day.year, month=day.month, day=day.day, hour=0, minute=0, second=0, tzinfo=tz)
-        end_dt = now if day == today else start_dt + timedelta(days=1)
+
+        if day == today:
+            end_dt = now
+        else:
+            end_dt = start_dt + timedelta(days=1)
 
         start_ts = int(start_dt.timestamp())
         end_ts = int(end_dt.timestamp())
@@ -82,8 +83,7 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
                 diff = 0.0
             results.append(round(diff, 2))
         except Exception as e:
-            if DEBUG:
-                print(f"❌ Erreur fetch_daily_for_calendar_days '{metric_name}' pour {day}: {e}")
+            print(f"❌ Erreur fetch_daily_for_calendar_days '{metric_name}' pour {day}: {e}")
             results.append(0.0)
 
     return results
@@ -102,7 +102,10 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
     for i in range(days):
         day = today - timedelta(days=i)
         start_dt = datetime(year=day.year, month=day.month, day=day.day, tzinfo=tz)
-        end_dt = now if day == today else start_dt + timedelta(days=1)
+        if day == today:
+            end_dt = now
+        else:
+            end_dt = start_dt + timedelta(days=1)
 
         start_ts = int(start_dt.timestamp())
         end_ts = int(end_dt.timestamp())
@@ -122,6 +125,7 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
                 continue
 
             values = res_list[0]["values"]
+
             max_val = -1
             max_ts = start_ts
             for ts, val in values:
@@ -134,8 +138,7 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
             max_times.append(datetime.fromtimestamp(max_ts, tz=tz).strftime("%Y-%m-%d %H:%M:%S"))
 
         except Exception as e:
-            if DEBUG:
-                print(f"❌ Erreur fetch_daily_max_power '{metric_name}' pour {day}: {e}")
+            print(f"❌ Erreur fetch_daily_max_power '{metric_name}' pour {day}: {e}")
             max_values.append(0)
             max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
 
@@ -178,8 +181,7 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
                         detected_color = color
                         break
                 except Exception as e:
-                    if DEBUG:
-                        print(f"⚠️ Erreur fetch_daily_tempo_colors pour {day} ({metric}): {e}")
+                    print(f"⚠️ Erreur fetch_daily_tempo_colors pour {day} ({metric}): {e}")
             if detected_color != "UNKNOWN":
                 break
 
@@ -271,7 +273,9 @@ def main():
         print("⛔ Timeout MQTT")
         sys.exit(1)
 
+    # =======================
     # Discovery Linky Test seulement
+    # =======================
     linky_discovery_payload = {
         "name": "Linky Test",
         "state_topic": LINKY_STATE_TOPIC,
@@ -287,8 +291,7 @@ def main():
 
     print("\n--- Boucle MQTT démarrée ---")
     while True:
-        if DEBUG:
-            print("\n--- Début du cycle toutes les {} secondes ---".format(PUBLISH_INTERVAL))
+        print("\n--- Début du cycle quotidien ---")
 
         hpjb = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjb, days=7)
         hpjw = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjw, days=7)
@@ -300,19 +303,16 @@ def main():
         hcjr = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjr, days=7)
         dailyweek_HC = [round(hcjb[i] + hcjw[i] + hcjr[i], 2) for i in range(7)]
 
-        if DEBUG:
-            print(f"📊 dailyweek_HP = {dailyweek_HP}")
-            print(f"📊 dailyweek_HC = {dailyweek_HC}")
+        print(f"📊 dailyweek_HP = {dailyweek_HP}")
+        print(f"📊 dailyweek_HC = {dailyweek_HC}")
 
         dailyweek_MP, dailyweek_MP_time = fetch_daily_max_power(VM_HOST, VM_PORT, METRIC_NAMEpcons, days=7)
         dailyweek_MP = [round(val / 1000, 3) for val in dailyweek_MP]  # VA → kVA
-        if DEBUG:
-            print(f"⚡ dailyweek_MP (kVA) = {dailyweek_MP}")
-            print(f"⏰ dailyweek_MP_time = {dailyweek_MP_time}")
+        print(f"⚡ dailyweek_MP (kVA) = {dailyweek_MP}")
+        print(f"⏰ dailyweek_MP_time = {dailyweek_MP_time}")
 
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
-        if DEBUG:
-            print(f"🎨 dailyweek_Tempo = {dailyweek_Tempo}")
+        print(f"🎨 dailyweek_Tempo = {dailyweek_Tempo}")
 
         now = datetime.now().astimezone().isoformat()
         linky_payload = build_linky_payload_exact(
@@ -323,10 +323,10 @@ def main():
 
         result2 = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
         result2.wait_for_publish()
-        if DEBUG:
-            print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
+        print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
 
-        time.sleep(PUBLISH_INTERVAL)
+        print("\n--- Cycle terminé. Mise en veille pour 24h ---")
+        time.sleep(24 * 3600)
 
 
 if __name__ == "__main__":
