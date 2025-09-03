@@ -1,85 +1,84 @@
-name: “Build & Push Docker Image from Main”
+name: "Build & Push Docker Image from Main"
 
 on:
-workflow_dispatch:
-inputs:
-TAG:
-description: “Tag pour l’image Docker”
-required: true
-default: “debug”
-push:
-branches:
-- main
-paths-ignore:
-- “**.md”
-- “.github/**”
+  workflow_dispatch:
+    inputs:
+      TAG:
+        description: "Tag pour l'image Docker"
+        required: true
+        default: "debug"
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - ".github/**"
 
 env:
-DOCKERHUB_USERNAME: “pbranly”
-IMAGE_NAME: “linkycreationdockermqtt”
+  DOCKERHUB_USERNAME: "pbranly"
+  IMAGE_NAME: "linkycreationdockermqtt"
 
 jobs:
-build-and-push:
-runs-on: ubuntu-latest
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1️⃣ Cloner le dépôt depuis la branche main
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
 
-steps:
-  # 1️⃣ Cloner le dépôt depuis la branche main
-  - name: Checkout main
-    uses: actions/checkout@v4
-    with:
-      ref: main
+      # 2️⃣ Définir le tag (input manuel ou SHA pour push auto)
+      - name: Définir le tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.TAG }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+          fi
 
-  # 2️⃣ Définir le tag (input manuel ou SHA pour push auto)
-  - name: Définir le tag
-    id: tag
-    run: |
-      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-        echo "tag=${{ github.event.inputs.TAG }}" >> $GITHUB_OUTPUT
-      else
-        echo "tag=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
-      fi
+      # 3️⃣ Vérifier que le secret DockerHub est bien présent
+      - name: Vérifier variables
+        run: |
+          echo "DOCKERHUB_USERNAME = $DOCKERHUB_USERNAME"
+          echo "IMAGE_NAME = $IMAGE_NAME"
+          echo "TAG = ${{ steps.tag.outputs.tag }}"
+          if [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "❌ DOCKERHUB_TOKEN est vide"
+            exit 1
+          else
+            echo "✅ DOCKERHUB_TOKEN est défini"
+          fi
 
-  # 3️⃣ Vérifier que le secret DockerHub est bien présent
-  - name: Vérifier variables
-    run: |
-      echo "DOCKERHUB_USERNAME = $DOCKERHUB_USERNAME"
-      echo "IMAGE_NAME = $IMAGE_NAME"
-      echo "TAG = ${{ steps.tag.outputs.tag }}"
-      if [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
-        echo "❌ DOCKERHUB_TOKEN est vide"
-        exit 1
-      else
-        echo "✅ DOCKERHUB_TOKEN est défini"
-      fi
+      # 4️⃣ Configurer Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-  # 4️⃣ Configurer Docker Buildx
-  - name: Set up Docker Buildx
-    uses: docker/setup-buildx-action@v3
+      # 5️⃣ Login DockerHub
+      - name: Login DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-  # 5️⃣ Login DockerHub
-  - name: Login DockerHub
-    uses: docker/login-action@v3
-    with:
-      username: ${{ env.DOCKERHUB_USERNAME }}
-      password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # 6️⃣ Build et Push l'image Docker
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+            ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-  # 6️⃣ Build et Push l'image Docker
-  - name: Build and push Docker image
-    uses: docker/build-push-action@v5
-    with:
-      context: .
-      file: ./Dockerfile
-      push: true
-      tags: |
-        ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
-        ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
-      cache-from: type=gha
-      cache-to: type=gha,mode=max
-
-  # 7️⃣ Afficher le résultat
-  - name: Résultat
-    run: |
-      echo "✅ Image construite et poussée avec succès !"
-      echo "📦 ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
-      echo "📦 ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-      
+      # 7️⃣ Afficher le résultat
+      - name: Résultat
+        run: |
+          echo "✅ Image construite et poussée avec succès !"
+          echo "📦 ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
+          echo "📦 ${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
