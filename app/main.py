@@ -87,6 +87,94 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
     return results
 
 # =======================
+# Fetch yearly consumption data
+# =======================
+def fetch_yearly_consumption_data(vm_host, vm_port, metric_names):
+    """
+    Calcule les consommations annuelles selon les spécifications :
+    - current_year : du 1er janvier à maintenant
+    - current_year_last_year : même période l'année précédente
+    
+    Pour chaque metric, calcul = max(dernier_jour) - min(1er_janvier) + somme_autres_metrics
+    """
+    tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(tz)
+    current_year = now.year
+    
+    # Période année en cours (1er janvier à maintenant)
+    current_year_start = datetime(current_year, 1, 1, tzinfo=tz)
+    current_year_end = now
+    
+    # Période année précédente (1er janvier à date équivalente)
+    last_year = current_year - 1
+    last_year_start = datetime(last_year, 1, 1, tzinfo=tz)
+    # Date équivalente l'année dernière
+    try:
+        last_year_end = datetime(last_year, now.month, now.day, now.hour, now.minute, tzinfo=tz)
+    except ValueError:  # Cas du 29 février sur année non bissextile
+        last_year_end = datetime(last_year, now.month, 28, now.hour, now.minute, tzinfo=tz)
+    
+    def get_consumption_for_period(start_dt, end_dt, metrics):
+        """Calcule la consommation totale pour une période donnée"""
+        total_consumption = 0.0
+        
+        start_ts = int(start_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+        
+        for metric in metrics:
+            try:
+                url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
+                params = {"query": metric, "start": start_ts, "end": end_ts, "step": 3600}  # 1h step
+                
+                r = requests.get(url, params=params, timeout=30)
+                r.raise_for_status()
+                data = r.json()
+                res_list = data.get("data", {}).get("result", [])
+                
+                if not res_list or not res_list[0].get("values"):
+                    print(f"⚠️ Pas de données pour {metric} sur la période {start_dt.date()} - {end_dt.date()}")
+                    continue
+                
+                values = res_list[0]["values"]
+                if len(values) < 2:
+                    print(f"⚠️ Données insuffisantes pour {metric}")
+                    continue
+                
+                # Calcul : max(dernier_jour) - min(1er_janvier)
+                first_val = float(values[0][1])  # Valeur du 1er janvier
+                last_val = float(values[-1][1])   # Valeur actuelle
+                
+                consumption = max(0, last_val - first_val)
+                total_consumption += consumption
+                
+                print(f"📊 {metric}: {first_val:.2f} → {last_val:.2f} = {consumption:.2f} kWh")
+                
+            except Exception as e:
+                print(f"❌ Erreur lors du calcul pour {metric}: {e}")
+                continue
+        
+        return round(total_consumption, 2)
+    
+    # Calcul année en cours
+    current_year_consumption = get_consumption_for_period(current_year_start, current_year_end, metric_names)
+    print(f"📊 Consommation année en cours ({current_year_start.date()} → {current_year_end.date()}): {current_year_consumption} kWh")
+    
+    # Calcul année précédente (même période)
+    last_year_consumption = get_consumption_for_period(last_year_start, last_year_end, metric_names)
+    print(f"📊 Consommation année précédente ({last_year_start.date()} → {last_year_end.date()}): {last_year_consumption} kWh")
+    
+    # Calcul évolution
+    if last_year_consumption > 0:
+        yearly_evolution = ((current_year_consumption - last_year_consumption) / last_year_consumption) * 100
+    else:
+        yearly_evolution = 0.0
+    
+    yearly_evolution = round(yearly_evolution, 2)
+    print(f"📊 Évolution annuelle: {yearly_evolution}%")
+    
+    return current_year_consumption, last_year_consumption, yearly_evolution
+
+# =======================
 # Puissance max par jour (VA → kVA)
 # =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
@@ -207,7 +295,8 @@ def compute_weekly_consumption(daily_14):
 # =======================
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
-                              dailyweek_Tempo=None, current_week=0, last_week=0, current_week_evolution=0):
+                              dailyweek_Tempo=None, current_week=0, last_week=0, current_week_evolution=0,
+                              current_year=0, current_year_last_year=0, yearly_evolution=0):
     tz = pytz.timezone("Europe/Paris")
     today = datetime.now(tz).date()
 
@@ -223,9 +312,9 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "serviceEnedis": "myElectricalData",
         "typeCompteur": "consommation",
         "unit_of_measurement": "kWh",
-        "current_year": 14560,
-        "current_year_last_year": 13200,
-        "yearly_evolution": 10.2,
+        "current_year": current_year,
+        "current_year_last_year": current_year_last_year,
+        "yearly_evolution": yearly_evolution,
         "last_month": 1200,
         "last_month_last_year": 1100,
         "monthly_evolution": 9.1,
@@ -305,6 +394,10 @@ def main():
     print("\n--- Boucle MQTT démarrée ---")
     current_day = datetime.now(pytz.timezone("Europe/Paris")).date()
 
+    # Liste des métriques pour les calculs annuels
+    tempo_metrics = [METRIC_NAMEhpjb, METRIC_NAMEhcjb, METRIC_NAMEhpjw, 
+                     METRIC_NAMEhcjw, METRIC_NAMEhpjr, METRIC_NAMEhcjr]
+
     while True:
         now_dt = datetime.now(pytz.timezone("Europe/Paris"))
         today = now_dt.date()
@@ -326,6 +419,12 @@ def main():
         # Calcul des semaines
         current_week, last_week, current_week_evolution = compute_weekly_consumption(daily_14)
 
+        # Calcul des données annuelles
+        print("\n📊 Calcul des données annuelles...")
+        current_year, current_year_last_year, yearly_evolution = fetch_yearly_consumption_data(
+            VM_HOST, VM_PORT, tempo_metrics
+        )
+
         # HP / HC pour les 7 derniers jours (inchangé)
         dailyweek_HP = [round(hpjb_14[i]+hpjw_14[i]+hpjr_14[i],2) for i in range(7)]
         dailyweek_HC = [round(hcjb_14[i]+hcjw_14[i]+hcjr_14[i],2) for i in range(7)]
@@ -339,7 +438,8 @@ def main():
         # JSON
         linky_payload = build_linky_payload_exact(
             dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo,
-            current_week, last_week, current_week_evolution
+            current_week, last_week, current_week_evolution,
+            current_year, current_year_last_year, yearly_evolution
         )
         now_iso = now_dt.isoformat()
         linky_payload["lastUpdate"] = now_iso
@@ -359,8 +459,8 @@ def main():
         print(f"  Current week:   {linky_payload['current_week']} kWh")
         print(f"  Last week:      {linky_payload['last_week']} kWh")
         print(f"  Week evolution: {linky_payload['current_week_evolution']}%")
-        print(f"  Current year:   {linky_payload['current_year']}")
-        print(f"  Last year:      {linky_payload['current_year_last_year']}")
+        print(f"  Current year:   {linky_payload['current_year']} kWh")
+        print(f"  Last year:      {linky_payload['current_year_last_year']} kWh")
         print(f"  Year evolution: {linky_payload['yearly_evolution']}%")
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
