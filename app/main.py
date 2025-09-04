@@ -186,7 +186,7 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
     return colors
 
 # =======================
-# JSON complet
+# JSON complet avec calcul semaine
 # =======================
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
@@ -202,6 +202,14 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
     tempo = dailyweek_Tempo if dailyweek_Tempo else ["UNKNOWN"]*7
     daily = [round(hp[i] + hc[i], 2) for i in range(7)]
 
+    # === Calcul consommation semaine ===
+    current_week = round(sum(daily[:7]), 2)  # semaine en cours
+    last_week = round(sum(daily[1:8]), 2) if len(daily) > 7 else 0.0  # semaine précédente
+    try:
+        current_week_evolution = round((current_week - last_week)/last_week*100, 2) if last_week != 0 else 0.0
+    except Exception:
+        current_week_evolution = 0.0
+
     payload = {
         "serviceEnedis": "myElectricalData",
         "typeCompteur": "consommation",
@@ -215,9 +223,9 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "current_month": 1300,
         "current_month_last_year": 1250,
         "current_month_evolution": 4,
-        "current_week": 300,
-        "last_week": 310,
-        "current_week_evolution": -3.2,
+        "current_week": current_week,
+        "last_week": last_week,
+        "current_week_evolution": current_week_evolution,
         "yesterday": 45,
         "day_2": 50,
         "yesterday_evolution": -10,
@@ -240,6 +248,13 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "versionGit": "1.0.0",
         "peak_offpeak_percent": 45
     }
+
+    # === LOG consommation semaine ===
+    print("\n📊 Consommation semaine:")
+    print(f"  Current week: {current_week} kWh")
+    print(f"  Last week:    {last_week} kWh")
+    print(f"  Evolution:    {current_week_evolution} %")
+
     return payload
 
 # =======================
@@ -335,6 +350,9 @@ def main():
         print(f"  Current year:   {linky_payload['current_year']}")
         print(f"  Last year:      {linky_payload['current_year_last_year']}")
         print(f"  Year evolution: {linky_payload['yearly_evolution']}%")
+        print(f"  Current week:   {linky_payload['current_week']} kWh")
+        print(f"  Last week:      {linky_payload['last_week']} kWh")
+        print(f"  Week evolution: {linky_payload['current_week_evolution']}%")
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
         # Publication
