@@ -44,13 +44,10 @@ LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
 # =======================
 # VictoriaMetrics robust daily fetch
 # =======================
-def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7, start_date=None):
+def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
     tz = pytz.timezone("Europe/Paris")
     now = datetime.now(tz)
-    if start_date:
-        today = start_date
-    else:
-        today = now.date()
+    today = now.date()
     results = []
 
     for i in range(days):
@@ -187,66 +184,13 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
         colors.append(detected_color)
 
     return colors
-# =======================
-# CALCUL ANNUEL ET HEBDOMADAIRE
-# =======================
-def calculate_weekly_consumption(vm_host, vm_port):
-    tz = pytz.timezone("Europe/Paris")
-    today = datetime.now(tz).date()
-    
-    # 7 derniers jours pour current week
-    daily_consumptions = fetch_daily_for_calendar_days(vm_host, vm_port, METRIC_NAMEpcons, days=7)
-    current_week = round(sum(daily_consumptions[:7]), 2)
-    
-    # jours 7 à 13 pour last week
-    last_week_consumptions = fetch_daily_for_calendar_days(vm_host, vm_port, METRIC_NAMEpcons, days=7, start_date=today - timedelta(days=7))
-    last_week = round(sum(last_week_consumptions[:7]), 2)
-    
-    # évolution %
-    if last_week > 0:
-        current_week_evolution = round((current_week - last_week) / last_week * 100, 2)
-    else:
-        current_week_evolution = 0.0
-
-    print(f"📅 Current week: {current_week} kWh")
-    print(f"📅 Last week:    {last_week} kWh")
-    print(f"📊 Week evolution: {current_week_evolution}%")
-    return current_week, last_week, current_week_evolution
-
-def calculate_yearly_consumption(vm_host, vm_port):
-    tz = pytz.timezone("Europe/Paris")
-    today = datetime.now(tz).date()
-    
-    # current year
-    start_current_year = datetime(today.year, 1, 1, tzinfo=tz).date()
-    daily_current_year = fetch_daily_for_calendar_days(vm_host, vm_port, METRIC_NAMEpcons, days=(today - start_current_year).days + 1, start_date=start_current_year)
-    current_year = round(sum(daily_current_year), 2)
-    
-    # last year
-    start_last_year = datetime(today.year - 1, 1, 1, tzinfo=tz).date()
-    end_last_year = datetime(today.year - 1, today.month, today.day, tzinfo=tz).date()
-    days_last_year = (end_last_year - start_last_year).days + 1
-    daily_last_year = fetch_daily_for_calendar_days(vm_host, vm_port, METRIC_NAMEpcons, days=days_last_year, start_date=start_last_year)
-    current_year_last_year = round(sum(daily_last_year), 2)
-    
-    if current_year_last_year > 0:
-        yearly_evolution = round((current_year - current_year_last_year) / current_year_last_year * 100, 2)
-    else:
-        yearly_evolution = 0.0
-
-    print(f"📅 Current year: {current_year} kWh")
-    print(f"📅 Last year:    {current_year_last_year} kWh")
-    print(f"📊 Year evolution: {yearly_evolution}%")
-    return current_year, current_year_last_year, yearly_evolution
 
 # =======================
 # JSON complet
 # =======================
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
-                              dailyweek_Tempo=None,
-                              current_week=0.0, last_week=0.0, current_week_evolution=0.0,
-                              current_year=0.0, current_year_last_year=0.0, yearly_evolution=0.0):
+                              dailyweek_Tempo=None):
     tz = pytz.timezone("Europe/Paris")
     today = datetime.now(tz).date()
 
@@ -262,18 +206,18 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "serviceEnedis": "myElectricalData",
         "typeCompteur": "consommation",
         "unit_of_measurement": "kWh",
-        "current_year": current_year,
-        "current_year_last_year": current_year_last_year,
-        "yearly_evolution": yearly_evolution,
+        "current_year": 14560,
+        "current_year_last_year": 13200,
+        "yearly_evolution": 10.2,
         "last_month": 1200,
         "last_month_last_year": 1100,
         "monthly_evolution": 9.1,
         "current_month": 1300,
         "current_month_last_year": 1250,
         "current_month_evolution": 4,
-        "current_week": current_week,
-        "last_week": last_week,
-        "current_week_evolution": current_week_evolution,
+        "current_week": 300,
+        "last_week": 310,
+        "current_week_evolution": -3.2,
         "yesterday": 45,
         "day_2": 50,
         "yesterday_evolution": -10,
@@ -369,17 +313,9 @@ def main():
         # Couleur tempo
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
 
-        # =======================
-        # Calcul semaine et année
-        # =======================
-        current_week, last_week, current_week_evolution = calculate_weekly_consumption(VM_HOST, VM_PORT)
-        current_year, current_year_last_year, yearly_evolution = calculate_yearly_consumption(VM_HOST, VM_PORT)
-
         # JSON
         linky_payload = build_linky_payload_exact(
-            dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo,
-            current_week, last_week, current_week_evolution,
-            current_year, current_year_last_year, yearly_evolution
+            dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo
         )
         now_iso = now_dt.isoformat()
         linky_payload["lastUpdate"] = now_iso
@@ -396,12 +332,9 @@ def main():
         print(f"  Tempo couleurs: {dailyweek_Tempo}")
         print(f"  Yesterday HP:   {linky_payload['yesterday_HP']}")
         print(f"  Yesterday HC:   {linky_payload['yesterday_HC']}")
-        print(f"  Current week:   {current_week} kWh")
-        print(f"  Last week:      {last_week} kWh")
-        print(f"  Week evolution: {current_week_evolution}%")
-        print(f"  Current year:   {current_year} kWh")
-        print(f"  Last year:      {current_year_last_year} kWh")
-        print(f"  Year evolution: {yearly_evolution}%")
+        print(f"  Current year:   {linky_payload['current_year']}")
+        print(f"  Last year:      {linky_payload['current_year_last_year']}")
+        print(f"  Year evolution: {linky_payload['yearly_evolution']}%")
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
         # Publication
