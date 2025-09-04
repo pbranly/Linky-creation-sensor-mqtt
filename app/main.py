@@ -349,4 +349,12 @@ def main():
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
         # Publication MQTT
-        result=client.publish(LINKY
+        result = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
+        result.wait_for_publish()
+        print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
+
+        # Attente avant le prochain cycle
+        time.sleep(PUBLISH_INTERVAL)
+
+if __name__ == "__main__":
+    main()
