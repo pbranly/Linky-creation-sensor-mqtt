@@ -23,7 +23,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT") or 1883)
 VM_HOST = os.getenv("VM_HOST", "127.0.0.1")
 VM_PORT = int(os.getenv("VM_PORT") or 8428)
 
-PUBLISH_INTERVAL = int(os.getenv("PUBLISH_INTERVAL") or 300)
+PUBLISH_INTERVAL = int(os.getenv("PUBLISH_INTERVAL") or 300)  # toutes les 5 min par défaut
 
 METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb_value"
 METRIC_NAMEhcjb = "sensor.linky_tempo_index_bbrhcjb_value"
@@ -42,7 +42,7 @@ LINKY_STATE_TOPIC = "homeassistant/sensor/linky_test/state"
 LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
 
 # =======================
-# FETCH DATA FROM VICTORIAMETRICS
+# VictoriaMetrics robust daily fetch
 # =======================
 def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
     tz = pytz.timezone("Europe/Paris")
@@ -65,11 +65,15 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
             r.raise_for_status()
             data = r.json()
             res_list = data.get("data", {}).get("result", [])
-            if not res_list or not res_list[0].get("values"):
+            if not res_list:
                 results.append(0.0)
                 continue
 
-            values = res_list[0]["values"]
+            values = res_list[0].get("values", [])
+            if not values:
+                results.append(0.0)
+                continue
+
             first_val = float(values[0][1])
             last_val = float(values[-1][1])
             diff = last_val - first_val
@@ -83,22 +87,121 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
     return results
 
 # =======================
-# CALCUL CONSO ANNUELLE
+# Puissance max par jour (VA → kVA)
+# =======================
+def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
+    tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(tz)
+    today = now.date()
+
+    max_values = []
+    max_times = []
+
+    for i in range(days):
+        day = today - timedelta(days=i)
+        start_dt = datetime(year=day.year, month=day.month, day=day.day, tzinfo=tz)
+        end_dt = now if day == today else start_dt + timedelta(days=1)
+
+        start_ts = int(start_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+
+        url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
+        params = {"query": metric_name, "start": start_ts, "end": end_ts, "step": 60}
+
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+            res_list = data.get("data", {}).get("result", [])
+
+            if not res_list or not res_list[0].get("values"):
+                max_values.append(0)
+                max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
+                continue
+
+            values = res_list[0]["values"]
+            max_val = -1
+            max_ts = start_ts
+            for ts, val in values:
+                v = float(val)/1000.0  # conversion VA → kVA
+                if v > max_val:
+                    max_val = v
+                    max_ts = int(ts)
+
+            max_values.append(round(max_val, 2))
+            max_times.append(datetime.fromtimestamp(max_ts, tz=tz).strftime("%Y-%m-%d %H:%M:%S"))
+
+        except Exception as e:
+            print(f"❌ Erreur fetch_daily_max_power '{metric_name}' pour {day}: {e}")
+            max_values.append(0)
+            max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
+
+    return max_values, max_times
+
+# =======================
+# Détection couleur Tempo par consommation
+# =======================
+def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
+    tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(tz)
+    today = now.date()
+    colors = []
+
+    tempo_metrics = {
+        "BLUE": ["sensor.linky_tempo_index_bbrhpjb_value", "sensor.linky_tempo_index_bbrhcjb_value"],
+        "WHITE": ["sensor.linky_tempo_index_bbrhpjw_value", "sensor.linky_tempo_index_bbrhcjw_value"],
+        "RED": ["sensor.linky_tempo_index_bbrhpjr_value", "sensor.linky_tempo_index_bbrhcjr_value"],
+    }
+
+    for i in range(days):
+        day = today - timedelta(days=i)
+        start_dt = datetime(year=day.year, month=day.month, day=day.day, hour=0, tzinfo=tz)
+        end_dt = start_dt + timedelta(days=1)
+
+        detected_color = "UNKNOWN"
+        for color, metrics in tempo_metrics.items():
+            for metric in metrics:
+                url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
+                params = {"query": metric, "start": int(start_dt.timestamp()), "end": int(end_dt.timestamp()), "step": 300}
+                try:
+                    r = requests.get(url, params=params, timeout=10)
+                    r.raise_for_status()
+                    data = r.json()
+                    res_list = data.get("data", {}).get("result", [])
+                    if res_list and res_list[0].get("values"):
+                        values = res_list[0]["values"]
+                        for _, v in values:
+                            if float(v) > 0:
+                                detected_color = color
+                                break
+                        if detected_color != "UNKNOWN":
+                            break
+                except Exception as e:
+                    print(f"⚠️ Erreur fetch_daily_tempo_colors pour {day} ({metric}): {e}")
+            if detected_color != "UNKNOWN":
+                break
+
+        colors.append(detected_color)
+
+    return colors
+
+# =======================
+# Données annuelles depuis VictoriaMetrics
 # =======================
 def fetch_yearly_consumption(vm_host, vm_port, metric_name, year=None):
     tz = pytz.timezone("Europe/Paris")
     now = datetime.now(tz)
-
     if year is None:
         year = now.year
     start_dt = datetime(year=year, month=1, day=1, hour=0, tzinfo=tz)
-    end_dt = now if year == now.year else datetime(year=year, month=12, day=31, hour=23, minute=59, tzinfo=tz)
+    end_dt = datetime(year=year, month=now.month, day=now.day, hour=23, minute=59, second=59, tzinfo=tz)
 
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
 
     url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
-    params = {"query": metric_name, "start": start_ts, "end": end_ts, "step": 3600}  # pas horaire
+    params = {"query": metric_name, "start": start_ts, "end": end_ts, "step": 3600}
+
     try:
         r = requests.get(url, params=params, timeout=60)
         r.raise_for_status()
@@ -106,7 +209,6 @@ def fetch_yearly_consumption(vm_host, vm_port, metric_name, year=None):
         res_list = data.get("data", {}).get("result", [])
         if not res_list or not res_list[0].get("values"):
             return 0.0
-
         values = res_list[0]["values"]
         first_val = float(values[0][1])
         last_val = float(values[-1][1])
@@ -115,11 +217,11 @@ def fetch_yearly_consumption(vm_host, vm_port, metric_name, year=None):
             diff = 0.0
         return round(diff, 2)
     except Exception as e:
-        print(f"❌ Erreur fetch_yearly_consumption '{metric_name}' pour l'année {year}: {e}")
+        print(f"❌ Erreur fetch_yearly_consumption pour {year}: {e}")
         return 0.0
 
 # =======================
-# BUILD JSON PAYLOAD
+# JSON complet
 # =======================
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
@@ -242,25 +344,22 @@ def main():
         hcjr = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjr, days=7)
         dailyweek_HC = [round(hcjb[i] + hcjw[i] + hcjr[i], 2) for i in range(7)]
 
-        # =======================
-        # Calcul semaine
-        # =======================
-        current_week = round(sum(dailyweek_HP[:7] + dailyweek_HC[:7]), 2)
-        last_week = round(sum(dailyweek_HP[1:8] + dailyweek_HC[1:8]), 2) if len(dailyweek_HP) > 7 else 0.0
-        current_week_evolution = round((current_week - last_week) / last_week * 100, 2) if last_week > 0 else 0.0
-
         # Puissance max
         dailyweek_MP, dailyweek_MP_time = fetch_daily_max_power(VM_HOST, VM_PORT, METRIC_NAMEpcons, days=7)
 
         # Couleur tempo
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
 
-        # =======================
-        # Calcul annuel
-        # =======================
+        # === CALCUL SEMAINE ACTUELLE & SEMAINE DERNIÈRE ===
+        current_week = round(sum(dailyweek_HP[0:7]) + sum(dailyweek_HC[0:7]), 2)
+        last_week = round(sum(dailyweek_HP[1:8]) + sum(dailyweek_HC[1:8]), 2) if len(dailyweek_HP) >= 8 else 0.0
+        current_week_evolution = round(((current_week - last_week) / last_week * 100) if last_week > 0 else 0.0, 2)
+
+        # === CALCUL ANNUEL ===
         current_year = fetch_yearly_consumption(VM_HOST, VM_PORT, METRIC_NAMEpcons, year=today.year)
         current_year_last_year = fetch_yearly_consumption(VM_HOST, VM_PORT, METRIC_NAMEpcons, year=today.year-1)
-        yearly_evolution = round((current_year - current_year_last_year) / current_year_last_year * 100, 2) if current_year_last_year > 0 else 0.0
+        yearly_evolution = round(((current_year - current_year_last_year) / current_year_last_year * 100)
+                                 if current_year_last_year > 0 else 0.0, 2)
 
         # JSON
         linky_payload = build_linky_payload_exact(
@@ -281,24 +380,4 @@ def main():
         print(f"  MP (7j):        {dailyweek_MP}")
         print(f"  MP times:       {dailyweek_MP_time}")
         print(f"  Tempo couleurs: {dailyweek_Tempo}")
-        print(f"  Yesterday HP:   {linky_payload['yesterday_HP']}")
-        print(f"  Yesterday HC:   {linky_payload['yesterday_HC']}")
-        print(f"  Current week:   {current_week} kWh")
-        print(f"  Last week:      {last_week} kWh")
-        print(f"  Current week évolution: {current_week_evolution}%")
-        print(f"  Current year:   {current_year} kWh")
-        print(f"  Last year:      {current_year_last_year} kWh")
-        print(f"  Yearly evolution: {yearly_evolution}%")
-        print(f"  Last update:    {linky_payload['lastUpdate']}")
-
-        # Publication
-        result = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
-        result.wait_for_publish()
-        print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
-
-        # Pause
-        time.sleep(PUBLISH_INTERVAL)
-
-
-if __name__ == "__main__":
-    main()
+        print(f"  Current
