@@ -65,11 +65,15 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
             r.raise_for_status()
             data = r.json()
             res_list = data.get("data", {}).get("result", [])
-            if not res_list or not res_list[0].get("values"):
+            if not res_list:
                 results.append(0.0)
                 continue
 
-            values = res_list[0]["values"]
+            values = res_list[0].get("values", [])
+            if not values:
+                results.append(0.0)
+                continue
+
             first_val = float(values[0][1])
             last_val = float(values[-1][1])
             diff = last_val - first_val
@@ -80,11 +84,10 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
             print(f"❌ Erreur fetch_daily_for_calendar_days '{metric_name}' pour {day}: {e}")
             results.append(0.0)
 
-    print(f"📊 {metric_name} (7j): {results}")
     return results
 
 # =======================
-# Puissance max par jour
+# Puissance max par jour (VA → kVA)
 # =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
     tz = pytz.timezone("Europe/Paris")
@@ -120,7 +123,7 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
             max_val = -1
             max_ts = start_ts
             for ts, val in values:
-                v = float(val)/1000.0
+                v = float(val)/1000.0  # conversion VA → kVA
                 if v > max_val:
                     max_val = v
                     max_ts = int(ts)
@@ -133,11 +136,10 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
             max_values.append(0)
             max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
 
-    print(f"⚡ {metric_name} max (7j): {max_values}")
     return max_values, max_times
 
 # =======================
-# Détection couleur Tempo
+# Détection couleur Tempo par consommation
 # =======================
 def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
     tz = pytz.timezone("Europe/Paris")
@@ -181,7 +183,6 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
 
         colors.append(detected_color)
 
-    print(f"🎨 Couleurs Tempo (7j): {colors}")
     return colors
 
 # =======================
@@ -270,7 +271,7 @@ def main():
         print("⛔ Timeout MQTT")
         sys.exit(1)
 
-    # Discovery
+    # Discovery Linky Test
     linky_discovery_payload = {
         "name": "Linky Test",
         "state_topic": LINKY_STATE_TOPIC,
@@ -292,32 +293,27 @@ def main():
         today = now_dt.date()
 
         if today != current_day:
-            print("🔄 Changement de jour détecté, recalcul complet")
+            print("🔄 Changement de jour détecté, rafraîchissement complet")
             current_day = today
 
-        # Récupération HP/HC
-        dailyweek_HP = [
-            round(x+y+z, 2) for x,y,z in zip(
-                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjb, 7),
-                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjw, 7),
-                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjr, 7)
-            )
-        ]
-        dailyweek_HC = [
-            round(x+y+z, 2) for x,y,z in zip(
-                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjb, 7),
-                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjw, 7),
-                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjr, 7)
-            )
-        ]
+        # HP / HC
+        hpjb = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjb, days=7)
+        hpjw = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjw, days=7)
+        hpjr = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjr, days=7)
+        dailyweek_HP = [round(hpjb[i] + hpjw[i] + hpjr[i], 2) for i in range(7)]
+
+        hcjb = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjb, days=7)
+        hcjw = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjw, days=7)
+        hcjr = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjr, days=7)
+        dailyweek_HC = [round(hcjb[i] + hcjw[i] + hcjr[i], 2) for i in range(7)]
 
         # Puissance max
         dailyweek_MP, dailyweek_MP_time = fetch_daily_max_power(VM_HOST, VM_PORT, METRIC_NAMEpcons, days=7)
 
-        # Couleur Tempo
+        # Couleur tempo
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
 
-        # Construction JSON
+        # JSON
         linky_payload = build_linky_payload_exact(
             dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo
         )
@@ -325,12 +321,28 @@ def main():
         linky_payload["lastUpdate"] = now_iso
         linky_payload["timeLastCall"] = now_iso
 
+        # === LOG DES VARIABLES CALCULEES ===
+        print("\n📑 Variables calculées pour ce cycle:")
+        print(f"  Dates:          {linky_payload['dailyweek']}")
+        print(f"  HP (7j):        {dailyweek_HP}")
+        print(f"  HC (7j):        {dailyweek_HC}")
+        print(f"  Daily (HP+HC):  {linky_payload['daily']}")
+        print(f"  MP (7j):        {dailyweek_MP}")
+        print(f"  MP times:       {dailyweek_MP_time}")
+        print(f"  Tempo couleurs: {dailyweek_Tempo}")
+        print(f"  Yesterday HP:   {linky_payload['yesterday_HP']}")
+        print(f"  Yesterday HC:   {linky_payload['yesterday_HC']}")
+        print(f"  Current year:   {linky_payload['current_year']}")
+        print(f"  Last year:      {linky_payload['current_year_last_year']}")
+        print(f"  Year evolution: {linky_payload['yearly_evolution']}%")
+        print(f"  Last update:    {linky_payload['lastUpdate']}")
+
         # Publication
         result = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
         result.wait_for_publish()
         print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
 
-        print(f"⏱️ Prochaine mise à jour dans {PUBLISH_INTERVAL} sec\n")
+        # Pause
         time.sleep(PUBLISH_INTERVAL)
 
 
