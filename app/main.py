@@ -383,6 +383,101 @@ def fetch_current_month_consumption_data(vm_host, vm_port, metric_names):
     return current_month_consumption, current_month_last_year_consumption, current_month_evolution
 
 # =======================
+# Fetch daily consumption data (yesterday and day before)
+# =======================
+def fetch_daily_consumption_data(vm_host, vm_port, metric_names):
+    """
+    Calcule les consommations quotidiennes selon les spécifications :
+    - yesterday : consommation d'hier (jour complet)
+    - day_2 : consommation avant-hier (jour complet)
+    - yesterday_evolution : évolution entre avant-hier et hier
+    
+    Pour chaque metric, calcul = max(fin_jour) - min(début_jour) + somme_autres_metrics
+    """
+    tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(tz)
+    today = now.date()
+    
+    # Hier (jour complet)
+    yesterday = today - timedelta(days=1)
+    yesterday_start = datetime(yesterday.year, yesterday.month, yesterday.day, tzinfo=tz)
+    yesterday_end = yesterday_start + timedelta(days=1) - timedelta(seconds=1)
+    
+    # Avant-hier (jour complet)
+    day_before_yesterday = today - timedelta(days=2)
+    day_before_start = datetime(day_before_yesterday.year, day_before_yesterday.month, day_before_yesterday.day, tzinfo=tz)
+    day_before_end = day_before_start + timedelta(days=1) - timedelta(seconds=1)
+    
+    def get_consumption_for_day(start_dt, end_dt, metrics, day_name):
+        """Calcule la consommation totale pour une journée"""
+        total_consumption = 0.0
+        
+        start_ts = int(start_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+        
+        print(f"📅 Calcul {day_name} ({start_dt.date()})")
+        
+        for metric in metrics:
+            try:
+                url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
+                params = {"query": metric, "start": start_ts, "end": end_ts, "step": 3600}  # 1h step
+                
+                r = requests.get(url, params=params, timeout=30)
+                r.raise_for_status()
+                data = r.json()
+                res_list = data.get("data", {}).get("result", [])
+                
+                if not res_list or not res_list[0].get("values"):
+                    print(f"⚠️ Pas de données pour {metric} le {start_dt.date()}")
+                    continue
+                
+                values = res_list[0]["values"]
+                if len(values) < 2:
+                    print(f"⚠️ Données insuffisantes pour {metric}")
+                    continue
+                
+                # Calcul : max(fin_jour) - min(début_jour)
+                first_val = float(values[0][1])  # Valeur début jour
+                last_val = float(values[-1][1])   # Valeur fin jour
+                
+                consumption = max(0, last_val - first_val)
+                total_consumption += consumption
+                
+                print(f"📊 {metric}: {first_val:.2f} → {last_val:.2f} = {consumption:.2f} kWh")
+                
+            except Exception as e:
+                print(f"❌ Erreur lors du calcul quotidien pour {metric}: {e}")
+                continue
+        
+        return round(total_consumption, 2)
+    
+    # Calcul hier
+    yesterday_consumption = get_consumption_for_day(
+        yesterday_start, yesterday_end, metric_names, 
+        f"hier ({yesterday.strftime('%d/%m/%Y')})"
+    )
+    
+    # Calcul avant-hier
+    day_2_consumption = get_consumption_for_day(
+        day_before_start, day_before_end, metric_names,
+        f"avant-hier ({day_before_yesterday.strftime('%d/%m/%Y')})"
+    )
+    
+    # Calcul évolution quotidienne
+    if day_2_consumption > 0:
+        yesterday_evolution = ((yesterday_consumption - day_2_consumption) / day_2_consumption) * 100
+    else:
+        yesterday_evolution = 0.0
+    
+    yesterday_evolution = round(yesterday_evolution, 2)
+    
+    print(f"📊 Consommation hier: {yesterday_consumption} kWh")
+    print(f"📊 Consommation avant-hier: {day_2_consumption} kWh")
+    print(f"📊 Évolution quotidienne: {yesterday_evolution}%")
+    
+    return yesterday_consumption, day_2_consumption, yesterday_evolution
+
+# =======================
 # Puissance max par jour (VA → kVA)
 # =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
@@ -506,7 +601,8 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_Tempo=None, current_week=0, last_week=0, current_week_evolution=0,
                               current_year=0, current_year_last_year=0, yearly_evolution=0,
                               last_month=0, last_month_last_year=0, monthly_evolution=0,
-                              current_month=0, current_month_last_year=0, current_month_evolution=0):
+                              current_month=0, current_month_last_year=0, current_month_evolution=0,
+                              yesterday=0, day_2=0, yesterday_evolution=0):
     tz = pytz.timezone("Europe/Paris")
     today = datetime.now(tz).date()
 
@@ -534,9 +630,9 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "current_week": current_week,
         "last_week": last_week,
         "current_week_evolution": current_week_evolution,
-        "yesterday": 45,
-        "day_2": 50,
-        "yesterday_evolution": -10,
+        "yesterday": yesterday,
+        "day_2": day_2,
+        "yesterday_evolution": yesterday_evolution,
         "daily": daily,
         "dailyweek": dailyweek_dates,
         "dailyweek_cost": [1.2,1.3,1.1,1.4,1.3,1.2,1.3],
@@ -647,6 +743,12 @@ def main():
             VM_HOST, VM_PORT, tempo_metrics
         )
 
+        # Calcul des données quotidiennes
+        print("\n📊 Calcul des données quotidiennes...")
+        yesterday, day_2, yesterday_evolution = fetch_daily_consumption_data(
+            VM_HOST, VM_PORT, tempo_metrics
+        )
+
         # HP / HC pour les 7 derniers jours (inchangé)
         dailyweek_HP = [round(hpjb_14[i]+hpjw_14[i]+hpjr_14[i],2) for i in range(7)]
         dailyweek_HC = [round(hcjb_14[i]+hcjw_14[i]+hcjr_14[i],2) for i in range(7)]
@@ -663,7 +765,8 @@ def main():
             current_week, last_week, current_week_evolution,
             current_year, current_year_last_year, yearly_evolution,
             last_month, last_month_last_year, monthly_evolution,
-            current_month, current_month_last_year, current_month_evolution
+            current_month, current_month_last_year, current_month_evolution,
+            yesterday, day_2, yesterday_evolution
         )
         now_iso = now_dt.isoformat()
         linky_payload["lastUpdate"] = now_iso
@@ -692,6 +795,9 @@ def main():
         print(f"  Current month:  {linky_payload['current_month']} kWh")
         print(f"  Current month LY: {linky_payload['current_month_last_year']} kWh")
         print(f"  Current month evo: {linky_payload['current_month_evolution']}%")
+        print(f"  Yesterday:      {linky_payload['yesterday']} kWh")
+        print(f"  Day before:     {linky_payload['day_2']} kWh")
+        print(f"  Daily evolution: {linky_payload['yesterday_evolution']}%")
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
         # Publication
