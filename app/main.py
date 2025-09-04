@@ -42,7 +42,7 @@ LINKY_STATE_TOPIC = "homeassistant/sensor/linky_test/state"
 LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
 
 # =======================
-# Fonctions pour fetch quotidien depuis VictoriaMetrics
+# Fonctions fetch quotidien depuis VictoriaMetrics
 # =======================
 def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
     tz = pytz.timezone("Europe/Paris")
@@ -169,7 +169,9 @@ def fetch_yearly_consumption(vm_host, vm_port):
     today = now.date()
     start_current = datetime(today.year,1,1,0,0,0,tzinfo=tz)
     start_last = datetime(today.year-1,1,1,0,0,0,tzinfo=tz)
-    end_last = start_last + (today - start_current + timedelta(days=1))
+    delta_current = now - start_current
+    end_last = start_last + delta_current
+
     metric_names = [METRIC_NAMEhpjb,METRIC_NAMEhpjw,METRIC_NAMEhpjr,
                     METRIC_NAMEhcjb,METRIC_NAMEhcjw,METRIC_NAMEhcjr]
 
@@ -195,9 +197,6 @@ def fetch_yearly_consumption(vm_host, vm_port):
     evolution=( (current_year-last_year)/last_year*100 if last_year else 0.0 )
     return current_year,last_year,round(evolution,2)
 
-# =======================
-# JSON complet
-# =======================
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
                               dailyweek_Tempo=None, current_week=0, last_week=0, current_week_evolution=0,
@@ -257,14 +256,12 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
 def main():
     client = mqtt.Client(protocol=mqtt.MQTTv5)
     evt = threading.Event()
-
     def on_connect(c,u,flags,rc,props=None):
         if rc==0:
             print("✅ MQTT connecté")
             evt.set()
         else:
             print(f"❌ MQTT échec (rc={rc})")
-
     client.on_connect = on_connect
     if LOGIN and PASSWORD:
         client.username_pw_set(LOGIN,PASSWORD)
@@ -317,7 +314,7 @@ def main():
         dailyweek_MP,dailyweek_MP_time=fetch_daily_max_power(VM_HOST,VM_PORT,METRIC_NAMEpcons,days=7)
         dailyweek_Tempo=fetch_daily_tempo_colors(VM_HOST,VM_PORT,days=7)
 
-        # === consommation annuelle ===
+        # Consommation annuelle
         current_year_val,last_year_val,yearly_evol=fetch_yearly_consumption(VM_HOST,VM_PORT)
 
         # JSON
