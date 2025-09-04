@@ -175,6 +175,118 @@ def fetch_yearly_consumption_data(vm_host, vm_port, metric_names):
     return current_year_consumption, last_year_consumption, yearly_evolution
 
 # =======================
+# Fetch monthly consumption data
+# =======================
+def fetch_monthly_consumption_data(vm_host, vm_port, metric_names):
+    """
+    Calcule les consommations mensuelles selon les spécifications :
+    - last_month : du 1er au dernier jour du mois précédent
+    - last_month_last_year : même mois l'année précédente
+    
+    Pour chaque metric, calcul = max(dernier_jour) - min(1er_du_mois) + somme_autres_metrics
+    """
+    tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(tz)
+    
+    # Calcul du mois précédent
+    if now.month == 1:
+        last_month_year = now.year - 1
+        last_month_month = 12
+    else:
+        last_month_year = now.year
+        last_month_month = now.month - 1
+    
+    # Période mois précédent (1er au dernier jour du mois précédent)
+    last_month_start = datetime(last_month_year, last_month_month, 1, tzinfo=tz)
+    
+    # Dernier jour du mois précédent
+    if last_month_month == 12:
+        next_month = datetime(last_month_year + 1, 1, 1, tzinfo=tz)
+    else:
+        next_month = datetime(last_month_year, last_month_month + 1, 1, tzinfo=tz)
+    last_month_end = next_month - timedelta(seconds=1)
+    
+    # Même mois l'année précédente
+    last_year_month_year = last_month_year - 1
+    last_year_month_start = datetime(last_year_month_year, last_month_month, 1, tzinfo=tz)
+    
+    # Dernier jour du même mois l'année précédente
+    if last_month_month == 12:
+        next_month_last_year = datetime(last_year_month_year + 1, 1, 1, tzinfo=tz)
+    else:
+        next_month_last_year = datetime(last_year_month_year, last_month_month + 1, 1, tzinfo=tz)
+    last_year_month_end = next_month_last_year - timedelta(seconds=1)
+    
+    def get_consumption_for_period(start_dt, end_dt, metrics, period_name):
+        """Calcule la consommation totale pour une période donnée"""
+        total_consumption = 0.0
+        
+        start_ts = int(start_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+        
+        print(f"📅 Calcul {period_name} ({start_dt.date()} → {end_dt.date()})")
+        
+        for metric in metrics:
+            try:
+                url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
+                params = {"query": metric, "start": start_ts, "end": end_ts, "step": 3600}  # 1h step
+                
+                r = requests.get(url, params=params, timeout=30)
+                r.raise_for_status()
+                data = r.json()
+                res_list = data.get("data", {}).get("result", [])
+                
+                if not res_list or not res_list[0].get("values"):
+                    print(f"⚠️ Pas de données pour {metric} sur la période {start_dt.date()} - {end_dt.date()}")
+                    continue
+                
+                values = res_list[0]["values"]
+                if len(values) < 2:
+                    print(f"⚠️ Données insuffisantes pour {metric}")
+                    continue
+                
+                # Calcul : max(dernier_jour) - min(1er_du_mois)
+                first_val = float(values[0][1])  # Valeur du 1er du mois
+                last_val = float(values[-1][1])   # Valeur du dernier jour
+                
+                consumption = max(0, last_val - first_val)
+                total_consumption += consumption
+                
+                print(f"📊 {metric}: {first_val:.2f} → {last_val:.2f} = {consumption:.2f} kWh")
+                
+            except Exception as e:
+                print(f"❌ Erreur lors du calcul mensuel pour {metric}: {e}")
+                continue
+        
+        return round(total_consumption, 2)
+    
+    # Calcul mois précédent
+    last_month_consumption = get_consumption_for_period(
+        last_month_start, last_month_end, metric_names, 
+        f"mois précédent ({last_month_start.strftime('%B %Y')})"
+    )
+    
+    # Calcul même mois l'année précédente
+    last_month_last_year_consumption = get_consumption_for_period(
+        last_year_month_start, last_year_month_end, metric_names,
+        f"même mois année précédente ({last_year_month_start.strftime('%B %Y')})"
+    )
+    
+    # Calcul évolution mensuelle
+    if last_month_last_year_consumption > 0:
+        monthly_evolution = ((last_month_consumption - last_month_last_year_consumption) / last_month_last_year_consumption) * 100
+    else:
+        monthly_evolution = 0.0
+    
+    monthly_evolution = round(monthly_evolution, 2)
+    
+    print(f"📊 Consommation mois précédent: {last_month_consumption} kWh")
+    print(f"📊 Consommation même mois année précédente: {last_month_last_year_consumption} kWh")
+    print(f"📊 Évolution mensuelle: {monthly_evolution}%")
+    
+    return last_month_consumption, last_month_last_year_consumption, monthly_evolution
+
+# =======================
 # Puissance max par jour (VA → kVA)
 # =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
@@ -296,7 +408,8 @@ def compute_weekly_consumption(daily_14):
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
                               dailyweek_Tempo=None, current_week=0, last_week=0, current_week_evolution=0,
-                              current_year=0, current_year_last_year=0, yearly_evolution=0):
+                              current_year=0, current_year_last_year=0, yearly_evolution=0,
+                              last_month=0, last_month_last_year=0, monthly_evolution=0):
     tz = pytz.timezone("Europe/Paris")
     today = datetime.now(tz).date()
 
@@ -315,9 +428,9 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "current_year": current_year,
         "current_year_last_year": current_year_last_year,
         "yearly_evolution": yearly_evolution,
-        "last_month": 1200,
-        "last_month_last_year": 1100,
-        "monthly_evolution": 9.1,
+        "last_month": last_month,
+        "last_month_last_year": last_month_last_year,
+        "monthly_evolution": monthly_evolution,
         "current_month": 1300,
         "current_month_last_year": 1250,
         "current_month_evolution": 4,
@@ -425,6 +538,12 @@ def main():
             VM_HOST, VM_PORT, tempo_metrics
         )
 
+        # Calcul des données mensuelles
+        print("\n📊 Calcul des données mensuelles...")
+        last_month, last_month_last_year, monthly_evolution = fetch_monthly_consumption_data(
+            VM_HOST, VM_PORT, tempo_metrics
+        )
+
         # HP / HC pour les 7 derniers jours (inchangé)
         dailyweek_HP = [round(hpjb_14[i]+hpjw_14[i]+hpjr_14[i],2) for i in range(7)]
         dailyweek_HC = [round(hcjb_14[i]+hcjw_14[i]+hcjr_14[i],2) for i in range(7)]
@@ -439,7 +558,8 @@ def main():
         linky_payload = build_linky_payload_exact(
             dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo,
             current_week, last_week, current_week_evolution,
-            current_year, current_year_last_year, yearly_evolution
+            current_year, current_year_last_year, yearly_evolution,
+            last_month, last_month_last_year, monthly_evolution
         )
         now_iso = now_dt.isoformat()
         linky_payload["lastUpdate"] = now_iso
@@ -462,6 +582,9 @@ def main():
         print(f"  Current year:   {linky_payload['current_year']} kWh")
         print(f"  Last year:      {linky_payload['current_year_last_year']} kWh")
         print(f"  Year evolution: {linky_payload['yearly_evolution']}%")
+        print(f"  Last month:     {linky_payload['last_month']} kWh")
+        print(f"  Last month LY:  {linky_payload['last_month_last_year']} kWh")
+        print(f"  Month evolution: {linky_payload['monthly_evolution']}%")
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
         # Publication
