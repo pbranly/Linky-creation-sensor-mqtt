@@ -257,12 +257,14 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
 def main():
     client = mqtt.Client(protocol=mqtt.MQTTv5)
     evt = threading.Event()
+
     def on_connect(c,u,flags,rc,props=None):
         if rc==0:
             print("✅ MQTT connecté")
             evt.set()
         else:
             print(f"❌ MQTT échec (rc={rc})")
+
     client.on_connect = on_connect
     if LOGIN and PASSWORD:
         client.username_pw_set(LOGIN,PASSWORD)
@@ -315,7 +317,7 @@ def main():
         dailyweek_MP,dailyweek_MP_time=fetch_daily_max_power(VM_HOST,VM_PORT,METRIC_NAMEpcons,days=7)
         dailyweek_Tempo=fetch_daily_tempo_colors(VM_HOST,VM_PORT,days=7)
 
-        # === AJOUT: consommation annuelle ===
+        # === consommation annuelle ===
         current_year_val,last_year_val,yearly_evol=fetch_yearly_consumption(VM_HOST,VM_PORT)
 
         # JSON
