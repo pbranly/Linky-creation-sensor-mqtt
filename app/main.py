@@ -186,7 +186,42 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
     return colors
 
 # =======================
-# JSON complet avec calcul semaine
+# Calcul consommation semaine
+# =======================
+def compute_weekly_consumption(daily_values):
+    """
+    Calcule la consommation de la semaine en cours et de la semaine précédente.
+    daily_values doit être une liste de consommation journalière pour les 7 derniers jours,
+    index 0 = aujourd'hui, index 6 = il y a 6 jours.
+    """
+    tz = pytz.timezone("Europe/Paris")
+    today = datetime.now(tz).date()
+    weekday = today.isoweekday()  # 1 = lundi, 7 = dimanche
+
+    # Inverser daily_values pour avoir index 0 = lundi
+    daily_rev = list(reversed(daily_values))
+
+    # current_week: lundi → aujourd'hui
+    current_week_values = daily_rev[:weekday]
+    current_week = round(sum(current_week_values), 2)
+
+    # last_week: semaine complète précédente (lundi → dimanche)
+    if len(daily_rev) >= weekday + 7:
+        last_week_values = daily_rev[weekday:weekday+7]
+    else:
+        last_week_values = [0.0]*7
+    last_week = round(sum(last_week_values), 2)
+
+    # évolution
+    try:
+        current_week_evolution = round((current_week - last_week) / last_week * 100, 2) if last_week != 0 else 0.0
+    except Exception:
+        current_week_evolution = 0.0
+
+    return current_week, last_week, current_week_evolution
+
+# =======================
+# JSON complet
 # =======================
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
@@ -202,13 +237,8 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
     tempo = dailyweek_Tempo if dailyweek_Tempo else ["UNKNOWN"]*7
     daily = [round(hp[i] + hc[i], 2) for i in range(7)]
 
-    # === Calcul consommation semaine ===
-    current_week = round(sum(daily[:7]), 2)  # semaine en cours
-    last_week = round(sum(daily[1:8]), 2) if len(daily) > 7 else 0.0  # semaine précédente
-    try:
-        current_week_evolution = round((current_week - last_week)/last_week*100, 2) if last_week != 0 else 0.0
-    except Exception:
-        current_week_evolution = 0.0
+    # ===== Nouveau calcul des semaines
+    current_week, last_week, current_week_evolution = compute_weekly_consumption(daily)
 
     payload = {
         "serviceEnedis": "myElectricalData",
@@ -249,11 +279,11 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "peak_offpeak_percent": 45
     }
 
-    # === LOG consommation semaine ===
-    print("\n📊 Consommation semaine:")
+    # === LOG SEMAINE
+    print(f"\n🗓️ Consommation semaine:")
     print(f"  Current week: {current_week} kWh")
     print(f"  Last week:    {last_week} kWh")
-    print(f"  Evolution:    {current_week_evolution} %")
+    print(f"  Evolution:    {current_week_evolution}%")
 
     return payload
 
@@ -347,12 +377,12 @@ def main():
         print(f"  Tempo couleurs: {dailyweek_Tempo}")
         print(f"  Yesterday HP:   {linky_payload['yesterday_HP']}")
         print(f"  Yesterday HC:   {linky_payload['yesterday_HC']}")
+        print(f"  Current week:   {linky_payload['current_week']}")
+        print(f"  Last week:      {linky_payload['last_week']}")
+        print(f"  Evolution:      {linky_payload['current_week_evolution']}%")
         print(f"  Current year:   {linky_payload['current_year']}")
         print(f"  Last year:      {linky_payload['current_year_last_year']}")
         print(f"  Year evolution: {linky_payload['yearly_evolution']}%")
-        print(f"  Current week:   {linky_payload['current_week']} kWh")
-        print(f"  Last week:      {linky_payload['last_week']} kWh")
-        print(f"  Week evolution: {linky_payload['current_week_evolution']}%")
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
         # Publication
