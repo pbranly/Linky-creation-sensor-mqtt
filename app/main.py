@@ -87,6 +87,41 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
     return results
 
 # =======================
+# VictoriaMetrics robust yearly fetch
+# =======================
+def fetch_yearly_consumption(vm_host, vm_port, metric_name, year_offset=0):
+    tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(tz)
+    year = now.year - year_offset
+    start_dt = datetime(year=year, month=1, day=1, tzinfo=tz)
+    end_dt = now if year_offset == 0 else datetime(year=year, month=12, day=31, tzinfo=tz)
+
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+    url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
+    params = {"query": metric_name, "start": start_ts, "end": end_ts, "step": 3600}  # 1h step
+
+    try:
+        r = requests.get(url, params=params, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        res_list = data.get("data", {}).get("result", [])
+        if not res_list:
+            return 0.0
+        values = res_list[0].get("values", [])
+        if not values:
+            return 0.0
+        first_val = float(values[0][1])
+        last_val = float(values[-1][1])
+        diff = last_val - first_val
+        if diff < 0:
+            diff = 0.0
+        return round(diff, 2)
+    except Exception as e:
+        print(f"❌ Erreur fetch_yearly_consumption '{metric_name}' pour {year}: {e}")
+        return 0.0
+
+# =======================
 # Puissance max par jour (VA → kVA)
 # =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
@@ -186,48 +221,13 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
     return colors
 
 # =======================
-# Données annuelles depuis VictoriaMetrics
-# =======================
-def fetch_yearly_consumption(vm_host, vm_port, metric_name, year=None):
-    tz = pytz.timezone("Europe/Paris")
-    now = datetime.now(tz)
-    if year is None:
-        year = now.year
-    start_dt = datetime(year=year, month=1, day=1, hour=0, tzinfo=tz)
-    end_dt = datetime(year=year, month=now.month, day=now.day, hour=23, minute=59, second=59, tzinfo=tz)
-
-    start_ts = int(start_dt.timestamp())
-    end_ts = int(end_dt.timestamp())
-
-    url = f"http://{vm_host}:{vm_port}/api/v1/query_range"
-    params = {"query": metric_name, "start": start_ts, "end": end_ts, "step": 3600}
-
-    try:
-        r = requests.get(url, params=params, timeout=60)
-        r.raise_for_status()
-        data = r.json()
-        res_list = data.get("data", {}).get("result", [])
-        if not res_list or not res_list[0].get("values"):
-            return 0.0
-        values = res_list[0]["values"]
-        first_val = float(values[0][1])
-        last_val = float(values[-1][1])
-        diff = last_val - first_val
-        if diff < 0:
-            diff = 0.0
-        return round(diff, 2)
-    except Exception as e:
-        print(f"❌ Erreur fetch_yearly_consumption pour {year}: {e}")
-        return 0.0
-
-# =======================
 # JSON complet
 # =======================
 def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
                               dailyweek_Tempo=None,
-                              current_week=0.0, last_week=0.0, current_week_evolution=0.0,
-                              current_year=0.0, current_year_last_year=0.0, yearly_evolution=0.0):
+                              current_week=0, last_week=0, current_week_evolution=0.0,
+                              current_year=0, current_year_last_year=0, yearly_evolution=0.0):
     tz = pytz.timezone("Europe/Paris")
     today = datetime.now(tz).date()
 
@@ -344,28 +344,27 @@ def main():
         hcjr = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjr, days=7)
         dailyweek_HC = [round(hcjb[i] + hcjw[i] + hcjr[i], 2) for i in range(7)]
 
+        # Consommation semaine
+        current_week = round(sum(dailyweek_HP[:7] + dailyweek_HC[:7]), 2)
+        last_week = 0.0  # Calcul à partir des données historiques si disponibles
+        current_week_evolution = round(((current_week - last_week) / last_week * 100) if last_week > 0 else 0.0, 2)
+
+        # Consommation année
+        current_year = fetch_yearly_consumption(VM_HOST, VM_PORT, METRIC_NAMEpcons)
+        current_year_last_year = fetch_yearly_consumption(VM_HOST, VM_PORT, METRIC_NAMEpcons, year_offset=1)
+        yearly_evolution = round(((current_year - current_year_last_year) / current_year_last_year * 100) if current_year_last_year > 0 else 0.0, 2)
+
         # Puissance max
         dailyweek_MP, dailyweek_MP_time = fetch_daily_max_power(VM_HOST, VM_PORT, METRIC_NAMEpcons, days=7)
 
         # Couleur tempo
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
 
-        # === CALCUL SEMAINE ACTUELLE & SEMAINE DERNIÈRE ===
-        current_week = round(sum(dailyweek_HP[0:7]) + sum(dailyweek_HC[0:7]), 2)
-        last_week = round(sum(dailyweek_HP[1:8]) + sum(dailyweek_HC[1:8]), 2) if len(dailyweek_HP) >= 8 else 0.0
-        current_week_evolution = round(((current_week - last_week) / last_week * 100) if last_week > 0 else 0.0, 2)
-
-        # === CALCUL ANNUEL ===
-        current_year = fetch_yearly_consumption(VM_HOST, VM_PORT, METRIC_NAMEpcons, year=today.year)
-        current_year_last_year = fetch_yearly_consumption(VM_HOST, VM_PORT, METRIC_NAMEpcons, year=today.year-1)
-        yearly_evolution = round(((current_year - current_year_last_year) / current_year_last_year * 100)
-                                 if current_year_last_year > 0 else 0.0, 2)
-
         # JSON
         linky_payload = build_linky_payload_exact(
             dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo,
-            current_week=current_week, last_week=last_week, current_week_evolution=current_week_evolution,
-            current_year=current_year, current_year_last_year=current_year_last_year, yearly_evolution=yearly_evolution
+            current_week, last_week, current_week_evolution,
+            current_year, current_year_last_year, yearly_evolution
         )
         now_iso = now_dt.isoformat()
         linky_payload["lastUpdate"] = now_iso
@@ -380,4 +379,27 @@ def main():
         print(f"  MP (7j):        {dailyweek_MP}")
         print(f"  MP times:       {dailyweek_MP_time}")
         print(f"  Tempo couleurs: {dailyweek_Tempo}")
-        print(f"  Current
+        print(f"  Yesterday HP:   {linky_payload['yesterday_HP']}")
+        print(f"  Yesterday HC:   {linky_payload['yesterday_HC']}")
+        print(f"  Current week:   {current_week} kWh")
+        print(f"  Last week:      {last_week} kWh")
+        print(f"  Week evolution: {current_week_evolution}%")
+        print(f"  Current year:   {current_year} kWh")
+        print(f"  Last year:      {current_year_last_year} kWh")
+        print(f"  Year evolution: {yearly_evolution}%")
+        print(f"  Last update:    {linky_payload['lastUpdate']}")
+
+        # Publication
+        try:
+            result = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
+            result.wait_for_publish()
+            print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
+        except Exception as e:
+            print(f"❌ Erreur publication MQTT: {e}")
+
+        # Pause avant le prochain cycle
+        time.sleep(PUBLISH_INTERVAL)
+
+
+if __name__ == "__main__":
+    main()
