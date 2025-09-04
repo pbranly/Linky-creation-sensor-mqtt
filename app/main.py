@@ -172,6 +172,7 @@ def fetch_yearly_consumption(vm_host, vm_port):
     end_last = start_last + (today - start_current + timedelta(days=1))
     metric_names = [METRIC_NAMEhpjb,METRIC_NAMEhpjw,METRIC_NAMEhpjr,
                     METRIC_NAMEhcjb,METRIC_NAMEhcjw,METRIC_NAMEhcjr]
+
     def fetch_total(start,end):
         total=0.0
         for metric in metric_names:
@@ -188,11 +189,16 @@ def fetch_yearly_consumption(vm_host, vm_port):
             except Exception as e:
                 print(f"❌ Erreur fetch_yearly_consumption pour {metric}: {e}")
         return round(total,2)
+
     current_year=fetch_total(start_current, now)
     last_year=fetch_total(start_last, end_last)
     evolution=( (current_year-last_year)/last_year*100 if last_year else 0.0 )
     return current_year,last_year,round(evolution,2)
-    def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
+
+# =======================
+# JSON complet
+# =======================
+def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               dailyweek_MP=None, dailyweek_MP_time=None,
                               dailyweek_Tempo=None, current_week=0, last_week=0, current_week_evolution=0,
                               current_year=0, current_year_last_year=0, yearly_evolution=0):
