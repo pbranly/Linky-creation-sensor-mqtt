@@ -67,26 +67,25 @@ def fetch_daily_for_calendar_days(vm_host, vm_port, metric_name, days=7):
             res_list = data.get("data", {}).get("result", [])
             if not res_list or not res_list[0].get("values"):
                 results.append(0.0)
-                print(f"ℹ️ {metric_name} pour {day} = 0.0 (pas de données)")
                 continue
 
             values = res_list[0]["values"]
-            print(f"📌 {metric_name} valeurs brutes pour {day}: {[float(v[1]) for v in values]}")
             first_val = float(values[0][1])
             last_val = float(values[-1][1])
             diff = last_val - first_val
             if diff < 0:
                 diff = 0.0
             results.append(round(diff, 2))
-            print(f"✅ {metric_name} pour {day}: first={first_val}, last={last_val}, diff={diff}")
-
         except Exception as e:
             print(f"❌ Erreur fetch_daily_for_calendar_days '{metric_name}' pour {day}: {e}")
             results.append(0.0)
 
-    print(f"📊 Résultat fetch_daily_for_calendar_days '{metric_name}': {results}")
+    print(f"📊 {metric_name} (7j): {results}")
     return results
 
+# =======================
+# Puissance max par jour
+# =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
     tz = pytz.timezone("Europe/Paris")
     now = datetime.now(tz)
@@ -115,11 +114,9 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
             if not res_list or not res_list[0].get("values"):
                 max_values.append(0)
                 max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
-                print(f"ℹ️ {metric_name} pour {day} = 0 (pas de données)")
                 continue
 
             values = res_list[0]["values"]
-            print(f"📌 {metric_name} valeurs brutes pour {day}: {[float(v[1])/1000.0 for v in values]} kVA")
             max_val = -1
             max_ts = start_ts
             for ts, val in values:
@@ -130,16 +127,18 @@ def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
 
             max_values.append(round(max_val, 2))
             max_times.append(datetime.fromtimestamp(max_ts, tz=tz).strftime("%Y-%m-%d %H:%M:%S"))
-            print(f"✅ {metric_name} max pour {day}: {max_val} kVA à {max_times[-1]}")
 
         except Exception as e:
             print(f"❌ Erreur fetch_daily_max_power '{metric_name}' pour {day}: {e}")
             max_values.append(0)
             max_times.append(start_dt.strftime("%Y-%m-%d 00:00:00"))
 
-    print(f"📊 Résultat fetch_daily_max_power '{metric_name}': {max_values}")
+    print(f"⚡ {metric_name} max (7j): {max_values}")
     return max_values, max_times
 
+# =======================
+# Détection couleur Tempo
+# =======================
 def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
     tz = pytz.timezone("Europe/Paris")
     now = datetime.now(tz)
@@ -169,7 +168,6 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
                     res_list = data.get("data", {}).get("result", [])
                     if res_list and res_list[0].get("values"):
                         values = res_list[0]["values"]
-                        print(f"📌 {metric} valeurs pour {day}: {[float(v[1]) for v in values]}")
                         for _, v in values:
                             if float(v) > 0:
                                 detected_color = color
@@ -182,9 +180,8 @@ def fetch_daily_tempo_colors(vm_host, vm_port, days=7):
                 break
 
         colors.append(detected_color)
-        print(f"🎨 Couleur détectée pour {day}: {detected_color}")
 
-    print(f"📊 Résultat fetch_daily_tempo_colors: {colors}")
+    print(f"🎨 Couleurs Tempo (7j): {colors}")
     return colors
 
 # =======================
@@ -273,7 +270,7 @@ def main():
         print("⛔ Timeout MQTT")
         sys.exit(1)
 
-    # Discovery Linky Test
+    # Discovery
     linky_discovery_payload = {
         "name": "Linky Test",
         "state_topic": LINKY_STATE_TOPIC,
@@ -295,19 +292,24 @@ def main():
         today = now_dt.date()
 
         if today != current_day:
-            print("🔄 Changement de jour détecté, rafraîchissement complet")
+            print("🔄 Changement de jour détecté, recalcul complet")
             current_day = today
 
         # Récupération HP/HC
-        hpjb = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjb, days=7)
-        hpjw = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjw, days=7)
-        hpjr = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjr, days=7)
-        dailyweek_HP = [round(hpjb[i] + hpjw[i] + hpjr[i], 2) for i in range(7)]
-
-        hcjb = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjb, days=7)
-        hcjw = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjw, days=7)
-        hcjr = fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjr, days=7)
-        dailyweek_HC = [round(hcjb[i] + hcjw[i] + hcjr[i], 2) for i in range(7)]
+        dailyweek_HP = [
+            round(x+y+z, 2) for x,y,z in zip(
+                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjb, 7),
+                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjw, 7),
+                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhpjr, 7)
+            )
+        ]
+        dailyweek_HC = [
+            round(x+y+z, 2) for x,y,z in zip(
+                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjb, 7),
+                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjw, 7),
+                fetch_daily_for_calendar_days(VM_HOST, VM_PORT, METRIC_NAMEhcjr, 7)
+            )
+        ]
 
         # Puissance max
         dailyweek_MP, dailyweek_MP_time = fetch_daily_max_power(VM_HOST, VM_PORT, METRIC_NAMEpcons, days=7)
@@ -315,7 +317,7 @@ def main():
         # Couleur Tempo
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
 
-        # Construction JSON complet
+        # Construction JSON
         linky_payload = build_linky_payload_exact(
             dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo
         )
@@ -323,13 +325,12 @@ def main():
         linky_payload["lastUpdate"] = now_iso
         linky_payload["timeLastCall"] = now_iso
 
-        # Publication MQTT
+        # Publication
         result = client.publish(LINKY_STATE_TOPIC, json.dumps(linky_payload), qos=1, retain=MQTT_RETAIN)
         result.wait_for_publish()
         print(f"📡 JSON complet publié sur {LINKY_STATE_TOPIC}")
 
-        # Attente avant prochaine mise à jour
-        print(f"⏱️ Mise à jour suivante dans {PUBLISH_INTERVAL} secondes\n")
+        print(f"⏱️ Prochaine mise à jour dans {PUBLISH_INTERVAL} sec\n")
         time.sleep(PUBLISH_INTERVAL)
 
 
