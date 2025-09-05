@@ -794,7 +794,7 @@ linky_discovery_payload = {
         "identifiers": [SENSOR_NAME],
         "name": f"Compteur {SENSOR_NAME.replace('_', ' ').title()}",
         "manufacturer": "Enedis",
-        "model": "Linky"
+        "model": "Linky"}
     }
     client.publish(LINKY_DISCOVERY_TOPIC, json.dumps(linky_discovery_payload), qos=1, retain=True)
 
