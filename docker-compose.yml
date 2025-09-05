@@ -1,14 +1,33 @@
-version: "3.9"
+
 
 services:
   data-importer:
     image: pbranly/linkycreationdockermqtt:debug
     container_name: linky-data-importer
     environment:
-      - MQTT_HOST=192.168.0.10
-      - MQTT_PORT=1883
-      - VM_HOST=192.168.0.10
-      - TZ=Europe/Paris
+      # Paramètres MQTT
+      - MQTT_HOST=192.168.0.10        # Adresse du broker MQTT
+      - MQTT_PORT=1883                # Port du broker MQTT
+      - LOGIN=admin                   # Nom d'utilisateur MQTT (par défaut: admin)
+      - PASSWORD=admin                # Mot de passe MQTT (par défaut: admin)
+
+      # Paramètres VictoriaMetrics
+      - VM_HOST=192.168.0.10          # Adresse de VictoriaMetrics
+      - VM_PORT=8428                  # Port de VictoriaMetrics
+
+      # Fuseau horaire
+      - TZ=Europe/Paris               # Fuseau horaire pour datetime et calculs journaliers
+
+      # Intervalle de publication MQTT
+      - PUBLISH_INTERVAL=300          # Intervalle entre chaque envoi JSON complet (en secondes, ici 5 min)
+      
+      
+      # définition du nom du sensor. Par défaut linky_tic
+      - SENSOR_NAME=linky_test   # <--- paramétrable ici
+
+      # Debug / Logging
+      - DEBUG=true                   # Optionnel: true pour logs détaillés ( non fonctionnel)
+
     restart: always
-    command: ["python", "-u", "main.py"]  # mode unbuffered
+    command: ["python", "-u", "main.py"]  # mode unbuffered pour logs en temps réel
     tty: false
