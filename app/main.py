@@ -478,6 +478,94 @@ def fetch_daily_consumption_data(vm_host, vm_port, metric_names):
     return yesterday_consumption, day_2_consumption, yesterday_evolution
 
 # =======================
+# Fetch Tempo tariffs and calculate daily costs
+# =======================
+def fetch_tempo_tariffs_and_calculate_costs(vm_host, vm_port, dailyweek_HP, dailyweek_HC, dailyweek_Tempo):
+    """
+    Récupère les tarifs Tempo depuis VictoriaMetrics et calcule les coûts journaliers
+    """
+    tz = pytz.timezone("Europe/Paris")
+    now = datetime.now(tz)
+    today = now.date()
+    
+    # Mapping des couleurs vers les métriques de tarifs
+    tariff_metrics = {
+        "BLUE": {
+            "HP": "sensor.tarif_bleu_tempo_heures_pleines_ttc_value",
+            "HC": "sensor.tarif_bleu_tempo_heures_creuses_ttc_value"
+        },
+        "WHITE": {
+            "HP": "sensor.tarif_blanc_tempo_heures_pleines_ttc_value", 
+            "HC": "sensor.tarif_blanc_tempo_heures_creuses_ttc_value"
+        },
+        "RED": {
+            "HP": "sensor.tarif_rouge_tempo_heures_pleines_ttc_value",
+            "HC": "sensor.tarif_rouge_tempo_heures_creuses_ttc_value"
+        }
+    }
+    
+    def get_current_tariff(metric_name):
+        """Récupère le tarif actuel depuis VictoriaMetrics"""
+        try:
+            url = f"http://{vm_host}:{vm_port}/api/v1/query"
+            params = {"query": metric_name}
+            
+            r = requests.get(url, params=params, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            res_list = data.get("data", {}).get("result", [])
+            
+            if res_list and res_list[0].get("value"):
+                tariff = float(res_list[0]["value"][1])
+                return tariff
+            else:
+                print(f"⚠️ Pas de données tarifaires pour {metric_name}")
+                return 0.0
+                
+        except Exception as e:
+            print(f"❌ Erreur récupération tarif {metric_name}: {e}")
+            return 0.0
+    
+    # Calcul des coûts pour chaque jour de la semaine
+    dailyweek_cost = []
+    dailyweek_costHP = []
+    dailyweek_costHC = []
+    
+    print("💰 Calcul des coûts journaliers avec tarifs Tempo...")
+    
+    for i in range(7):
+        day = today - timedelta(days=i)
+        color = dailyweek_Tempo[i]
+        hp_consumption = dailyweek_HP[i]
+        hc_consumption = dailyweek_HC[i]
+        
+        # Récupération des tarifs selon la couleur du jour
+        if color in tariff_metrics:
+            hp_tariff = get_current_tariff(tariff_metrics[color]["HP"])
+            hc_tariff = get_current_tariff(tariff_metrics[color]["HC"])
+        else:
+            print(f"⚠️ Couleur inconnue {color} pour le {day.strftime('%d/%m/%Y')}, utilisation tarif BLEU par défaut")
+            hp_tariff = get_current_tariff(tariff_metrics["BLUE"]["HP"])
+            hc_tariff = get_current_tariff(tariff_metrics["BLUE"]["HC"])
+        
+        # Calcul des coûts
+        cost_hp = round(hp_consumption * hp_tariff / 100, 2)  # Division par 100 si tarifs en centimes
+        cost_hc = round(hc_consumption * hc_tariff / 100, 2)  # Division par 100 si tarifs en centimes
+        total_cost = round(cost_hp + cost_hc, 2)
+        
+        dailyweek_costHP.append(cost_hp)
+        dailyweek_costHC.append(cost_hc)
+        dailyweek_cost.append(total_cost)
+        
+        print(f"💰 {day.strftime('%d/%m/%Y')} ({color}): HP={hp_consumption}kWh×{hp_tariff/100:.4f}€ + HC={hc_consumption}kWh×{hc_tariff/100:.4f}€ = {total_cost}€")
+    
+    print(f"💰 Coûts totaux journaliers: {dailyweek_cost}")
+    print(f"💰 Coûts HP journaliers: {dailyweek_costHP}")
+    print(f"💰 Coûts HC journaliers: {dailyweek_costHC}")
+    
+    return dailyweek_cost, dailyweek_costHP, dailyweek_costHC
+
+# =======================
 # Puissance max par jour (VA → kVA)
 # =======================
 def fetch_daily_max_power(vm_host, vm_port, metric_name, days=7):
@@ -602,7 +690,8 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
                               current_year=0, current_year_last_year=0, yearly_evolution=0,
                               last_month=0, last_month_last_year=0, monthly_evolution=0,
                               current_month=0, current_month_last_year=0, current_month_evolution=0,
-                              yesterday=0, day_2=0, yesterday_evolution=0):
+                              yesterday=0, day_2=0, yesterday_evolution=0,
+                              dailyweek_cost=None, dailyweek_costHP=None, dailyweek_costHC=None):
     tz = pytz.timezone("Europe/Paris")
     today = datetime.now(tz).date()
 
@@ -613,6 +702,11 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
     mp_time = dailyweek_MP_time if dailyweek_MP_time else [today.strftime("%Y-%m-%d 00:00:00")]*7
     tempo = dailyweek_Tempo if dailyweek_Tempo else ["UNKNOWN"]*7
     daily = [round(hp[i] + hc[i], 2) for i in range(7)]
+    
+    # Utilisation des coûts calculés ou valeurs par défaut
+    cost = dailyweek_cost if dailyweek_cost else [1.2,1.3,1.1,1.4,1.3,1.2,1.3]
+    cost_hp = dailyweek_costHP if dailyweek_costHP else [0.7,0.7,0.6,0.8,0.8,0.6,0.8] 
+    cost_hc = dailyweek_costHC if dailyweek_costHC else [0.5,0.6,0.5,0.6,0.5,0.6,0.5]
 
     payload = {
         "serviceEnedis": "myElectricalData",
@@ -635,9 +729,9 @@ def build_linky_payload_exact(dailyweek_HP=None, dailyweek_HC=None,
         "yesterday_evolution": yesterday_evolution,
         "daily": daily,
         "dailyweek": dailyweek_dates,
-        "dailyweek_cost": [1.2,1.3,1.1,1.4,1.3,1.2,1.3],
-        "dailyweek_costHC": [0.5,0.6,0.5,0.6,0.5,0.6,0.5],
-        "dailyweek_costHP": [0.7,0.7,0.6,0.8,0.8,0.6,0.8],
+        "dailyweek_cost": cost,
+        "dailyweek_costHC": cost_hc,
+        "dailyweek_costHP": cost_hp,
         "dailyweek_HC": hc,
         "daily_cost": 0.6,
         "yesterday_HP": hp[1] if len(hp) > 1 else 0,
@@ -759,6 +853,12 @@ def main():
         # Couleur tempo
         dailyweek_Tempo = fetch_daily_tempo_colors(VM_HOST, VM_PORT, days=7)
 
+        # Calcul des coûts avec les tarifs Tempo
+        print("\n💰 Calcul des coûts journaliers...")
+        dailyweek_cost, dailyweek_costHP, dailyweek_costHC = fetch_tempo_tariffs_and_calculate_costs(
+            VM_HOST, VM_PORT, dailyweek_HP, dailyweek_HC, dailyweek_Tempo
+        )
+
         # JSON
         linky_payload = build_linky_payload_exact(
             dailyweek_HP, dailyweek_HC, dailyweek_MP, dailyweek_MP_time, dailyweek_Tempo,
@@ -766,7 +866,8 @@ def main():
             current_year, current_year_last_year, yearly_evolution,
             last_month, last_month_last_year, monthly_evolution,
             current_month, current_month_last_year, current_month_evolution,
-            yesterday, day_2, yesterday_evolution
+            yesterday, day_2, yesterday_evolution,
+            dailyweek_cost, dailyweek_costHP, dailyweek_costHC
         )
         now_iso = now_dt.isoformat()
         linky_payload["lastUpdate"] = now_iso
@@ -798,6 +899,9 @@ def main():
         print(f"  Yesterday:      {linky_payload['yesterday']} kWh")
         print(f"  Day before:     {linky_payload['day_2']} kWh")
         print(f"  Daily evolution: {linky_payload['yesterday_evolution']}%")
+        print(f"  Coûts journaliers: {linky_payload['dailyweek_cost']}")
+        print(f"  Coûts HP:       {linky_payload['dailyweek_costHP']}")
+        print(f"  Coûts HC:       {linky_payload['dailyweek_costHC']}")
         print(f"  Last update:    {linky_payload['lastUpdate']}")
 
         # Publication
