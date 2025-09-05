@@ -23,6 +23,8 @@ MQTT_PORT = int(os.getenv("MQTT_PORT") or 1883)
 VM_HOST = os.getenv("VM_HOST", "127.0.0.1")
 VM_PORT = int(os.getenv("VM_PORT") or 8428)
 
+SENSOR_NAME = os.getenv("SENSOR_NAME", "linky_tic")
+
 PUBLISH_INTERVAL = int(os.getenv("PUBLISH_INTERVAL") or 300)  # toutes les 5 min par défaut
 
 METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb_value"
@@ -38,8 +40,8 @@ MQTT_RETAIN = True
 # =======================
 # MQTT Topics
 # =======================
-LINKY_STATE_TOPIC = "homeassistant/sensor/linky_test/state"
-LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
+LINKY_STATE_TOPIC = f"homeassistant/sensor/{SENSOR_NAME}/state"
+LINKY_DISCOVERY_TOPIC = f"homeassistant/sensor/{SENSOR_NAME}/config"
 
 # =======================
 # VictoriaMetrics robust daily fetch
