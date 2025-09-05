@@ -779,17 +779,22 @@ def main():
         print("⛔ Timeout MQTT")
         sys.exit(1)
 
-    # Discovery Linky Test
-    linky_discovery_payload = {
-        "name": "Linky Test",
-        "state_topic": LINKY_STATE_TOPIC,
-        "value_template": "{{ value_json.current_year }}",
-        "json_attributes_topic": LINKY_STATE_TOPIC,
-        "unit_of_measurement": "kWh",
-        "device_class": "energy",
-        "icon": "mdi:counter",
-        "unique_id": "linky_test_sensor",
-        "device": {"identifiers": ["linky"], "name": "Compteur Linky", "manufacturer": "Enedis", "model": "Linky"}
+
+# Discovery Linky
+linky_discovery_payload = {
+    "name": SENSOR_NAME.replace("_", " ").title(),  # Ex: linky_test -> "Linky Test"
+    "state_topic": LINKY_STATE_TOPIC,
+    "value_template": "{{ value_json.current_year }}",
+    "json_attributes_topic": LINKY_STATE_TOPIC,
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "icon": "mdi:counter",
+    "unique_id": f"{SENSOR_NAME}_sensor",
+    "device": {
+        "identifiers": [SENSOR_NAME],
+        "name": f"Compteur {SENSOR_NAME.replace('_', ' ').title()}",
+        "manufacturer": "Enedis",
+        "model": "Linky"
     }
     client.publish(LINKY_DISCOVERY_TOPIC, json.dumps(linky_discovery_payload), qos=1, retain=True)
 
