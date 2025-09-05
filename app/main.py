@@ -549,8 +549,8 @@ def fetch_tempo_tariffs_and_calculate_costs(vm_host, vm_port, dailyweek_HP, dail
             hc_tariff = get_current_tariff(tariff_metrics["BLUE"]["HC"])
         
         # Calcul des coûts
-        cost_hp = round(hp_consumption * hp_tariff / 100, 2)  # Division par 100 si tarifs en centimes
-        cost_hc = round(hc_consumption * hc_tariff / 100, 2)  # Division par 100 si tarifs en centimes
+        cost_hp = round(hp_consumption * hp_tariff , 2)
+        cost_hc = round(hc_consumption * hc_tariff , 2)
         total_cost = round(cost_hp + cost_hc, 2)
         
         dailyweek_costHP.append(cost_hp)
