@@ -23,6 +23,8 @@ MQTT_PORT = int(os.getenv("MQTT_PORT") or 1883)
 VM_HOST = os.getenv("VM_HOST", "127.0.0.1")
 VM_PORT = int(os.getenv("VM_PORT") or 8428)
 
+SENSOR_NAME = os.getenv("SENSOR_NAME", "linky_tic")
+
 PUBLISH_INTERVAL = int(os.getenv("PUBLISH_INTERVAL") or 300)  # toutes les 5 min par défaut
 
 METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb_value"
@@ -38,8 +40,8 @@ MQTT_RETAIN = True
 # =======================
 # MQTT Topics
 # =======================
-LINKY_STATE_TOPIC = "homeassistant/sensor/linky_test/state"
-LINKY_DISCOVERY_TOPIC = "homeassistant/sensor/linky_test/config"
+LINKY_STATE_TOPIC = f"homeassistant/sensor/{SENSOR_NAME}/state"
+LINKY_DISCOVERY_TOPIC = f"homeassistant/sensor/{SENSOR_NAME}/config"
 
 # =======================
 # VictoriaMetrics robust daily fetch
@@ -777,17 +779,25 @@ def main():
         print("⛔ Timeout MQTT")
         sys.exit(1)
 
-    # Discovery Linky Test
+
+    # =======================
+    # Discovery Linky (indenter ici !)
+    # =======================
     linky_discovery_payload = {
-        "name": "Linky Test",
+        "name": SENSOR_NAME.replace("_", " ").title(),  # ex: linky_test -> "Linky Test"
         "state_topic": LINKY_STATE_TOPIC,
         "value_template": "{{ value_json.current_year }}",
         "json_attributes_topic": LINKY_STATE_TOPIC,
         "unit_of_measurement": "kWh",
         "device_class": "energy",
         "icon": "mdi:counter",
-        "unique_id": "linky_test_sensor",
-        "device": {"identifiers": ["linky"], "name": "Compteur Linky", "manufacturer": "Enedis", "model": "Linky"}
+        "unique_id": f"{SENSOR_NAME}_sensor",
+        "device": {
+            "identifiers": [SENSOR_NAME],
+            "name": f"Compteur {SENSOR_NAME.replace('_', ' ').title()}",
+            "manufacturer": "Enedis",
+            "model": "Linky"
+        }
     }
     client.publish(LINKY_DISCOVERY_TOPIC, json.dumps(linky_discovery_payload), qos=1, retain=True)
 
