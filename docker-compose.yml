@@ -23,7 +23,7 @@ services:
       
       
       # définition du nom du sensor. Par défaut linky_tic
-      - SENSOR_NAME=linky_test   # <--- paramétrable ici
+      - SENSOR_NAME=linky_tic   # <--- paramétrable ici
 
       # Debug / Logging
       - DEBUG=true                   # Optionnel: true pour logs détaillés ( non fonctionnel)
