@@ -2,7 +2,7 @@
 
 services:
   data-importer:
-    image: pbranly/linkycreationdockermqtt:debug
+    image: pbranly/linkycreationdockermqtt:latest
     container_name: linky-data-importer
     environment:
       # Paramètres MQTT
