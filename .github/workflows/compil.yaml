@@ -24,9 +24,12 @@ on:
       - main
     tags:
       - 'v*'
+      - '*'
     paths-ignore:
       - "**.md"
       - ".github/**"
+  release:
+    types: [published, created]
 
 env:
   DOCKERHUB_USERNAME: "pbranly"
@@ -51,6 +54,10 @@ jobs:
               echo "source_ref=${{ github.event.inputs.TAG_NAME }}" >> $GITHUB_OUTPUT
               echo "image_suffix=${{ github.event.inputs.TAG_NAME }}" >> $GITHUB_OUTPUT
             fi
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            echo "source_type=tag" >> $GITHUB_OUTPUT
+            echo "source_ref=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+            echo "image_suffix=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
           elif [ "${{ github.ref_type }}" = "tag" ]; then
             echo "source_type=tag" >> $GITHUB_OUTPUT
             echo "source_ref=${{ github.ref_name }}" >> $GITHUB_OUTPUT
