@@ -8,28 +8,19 @@ on:
         required: true
         type: choice
         options:
-          - "branch"
           - "tag"
-        default: "branch"
-      BRANCH_NAME:
-        description: "Nom de la branche (si BUILD_TYPE = branch)"
-        required: false
-        default: "main"
+        default: "tag"
       TAG_NAME:
         description: "Nom du tag (si BUILD_TYPE = tag)"
         required: false
         default: ""
+
   push:
-    branches:
-      - main
     tags:
-      - 'v*'
-      - '*'
+      - '*'   # ou plus restrictif : 'v*' si tu veux seulement les tags commençant par v
     paths-ignore:
       - "**.md"
       - ".github/**"
-  release:
-    types: [published, created]
 
 env:
   DOCKERHUB_USERNAME: "pbranly"
@@ -38,37 +29,22 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    
     steps:
-      # 1️⃣ Déterminer la source et le checkout approprié
+      # 1️⃣ Déterminer la source
       - name: Déterminer la source
         id: source
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ github.event.inputs.BUILD_TYPE }}" = "branch" ]; then
-              echo "source_type=branch" >> $GITHUB_OUTPUT
-              echo "source_ref=${{ github.event.inputs.BRANCH_NAME }}" >> $GITHUB_OUTPUT
-              echo "image_suffix=latest-${{ github.event.inputs.BRANCH_NAME }}" >> $GITHUB_OUTPUT
-            else
-              echo "source_type=tag" >> $GITHUB_OUTPUT
-              echo "source_ref=${{ github.event.inputs.TAG_NAME }}" >> $GITHUB_OUTPUT
-              echo "image_suffix=${{ github.event.inputs.TAG_NAME }}" >> $GITHUB_OUTPUT
-            fi
-          elif [ "${{ github.event_name }}" = "release" ]; then
             echo "source_type=tag" >> $GITHUB_OUTPUT
-            echo "source_ref=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
-            echo "image_suffix=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "source_ref=${{ github.event.inputs.TAG_NAME }}" >> $GITHUB_OUTPUT
+            echo "image_suffix=${{ github.event.inputs.TAG_NAME }}" >> $GITHUB_OUTPUT
+          else
             echo "source_type=tag" >> $GITHUB_OUTPUT
             echo "source_ref=${{ github.ref_name }}" >> $GITHUB_OUTPUT
             echo "image_suffix=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            echo "source_type=branch" >> $GITHUB_OUTPUT
-            echo "source_ref=main" >> $GITHUB_OUTPUT
-            echo "image_suffix=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
           fi
 
-      # 2️⃣ Cloner le dépôt depuis la source appropriée
+      # 2️⃣ Checkout
       - name: Checkout source
         uses: actions/checkout@v4
         with:
@@ -79,29 +55,14 @@ jobs:
         id: docker_tags
         run: |
           BASE_TAG="${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
-          
-          if [ "${{ steps.source.outputs.source_type }}" = "tag" ]; then
-            # Pour les tags : créer image avec numéro du tag + latest
-            echo "tags=${BASE_TAG}:${{ steps.source.outputs.image_suffix }},${BASE_TAG}:latest" >> $GITHUB_OUTPUT
-            echo "main_tag=${{ steps.source.outputs.image_suffix }}" >> $GITHUB_OUTPUT
-          else
-            # Pour les branches : créer image avec latest-branche (+ latest si c'est main)
-            if [ "${{ steps.source.outputs.source_ref }}" = "main" ]; then
-              echo "tags=${BASE_TAG}:${{ steps.source.outputs.image_suffix }},${BASE_TAG}:latest" >> $GITHUB_OUTPUT
-            else
-              echo "tags=${BASE_TAG}:${{ steps.source.outputs.image_suffix }}" >> $GITHUB_OUTPUT
-            fi
-            echo "main_tag=${{ steps.source.outputs.image_suffix }}" >> $GITHUB_OUTPUT
-          fi
+          echo "tags=${BASE_TAG}:${{ steps.source.outputs.image_suffix }},${BASE_TAG}:latest" >> $GITHUB_OUTPUT
+          echo "main_tag=${{ steps.source.outputs.image_suffix }}" >> $GITHUB_OUTPUT
 
-      # 4️⃣ Vérifier que le secret DockerHub est bien présent
+      # 4️⃣ Vérifications
       - name: Vérifier variables
         run: |
-          echo "DOCKERHUB_USERNAME = $DOCKERHUB_USERNAME"
-          echo "IMAGE_NAME = $IMAGE_NAME"
           echo "SOURCE_TYPE = ${{ steps.source.outputs.source_type }}"
           echo "SOURCE_REF = ${{ steps.source.outputs.source_ref }}"
-          echo "MAIN_TAG = ${{ steps.docker_tags.outputs.main_tag }}"
           echo "DOCKER_TAGS = ${{ steps.docker_tags.outputs.tags }}"
           if [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
             echo "❌ DOCKERHUB_TOKEN est vide"
@@ -110,18 +71,16 @@ jobs:
             echo "✅ DOCKERHUB_TOKEN est défini"
           fi
 
-      # 5️⃣ Configurer Docker Buildx
+      # 5️⃣ Build & Push
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 6️⃣ Login DockerHub
       - name: Login DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 7️⃣ Build et Push l'image Docker
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -131,15 +90,3 @@ jobs:
           tags: ${{ steps.docker_tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # 8️⃣ Afficher le résultat
-      - name: Résultat
-        run: |
-          echo "✅ Image construite et poussée avec succès !"
-          echo "🎯 Source: ${{ steps.source.outputs.source_type }} (${{ steps.source.outputs.source_ref }})"
-          echo ""
-          echo "📦 Images créées:"
-          IFS=',' read -ra TAGS <<< "${{ steps.docker_tags.outputs.tags }}"
-          for tag in "${TAGS[@]}"; do
-            echo "  - $tag"
-          done
