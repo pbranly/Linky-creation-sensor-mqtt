@@ -48,13 +48,13 @@ PUBLISH_INTERVAL = int(os.getenv("PUBLISH_INTERVAL") or 300)
 
 # Noms des métriques (adaptés selon la DB)
 if DB_TYPE == "influxdb":
-    METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb"
-    METRIC_NAMEhcjb = "sensor.linky_tempo_index_bbrhcjb"
-    METRIC_NAMEhpjw = "sensor.linky_tempo_index_bbrhpjw"
-    METRIC_NAMEhcjw = "sensor.linky_tempo_index_bbrhcjw"
-    METRIC_NAMEhpjr = "sensor.linky_tempo_index_bbrhpjr"
-    METRIC_NAMEhcjr = "sensor.linky_tempo_index_bbrhcjr"
-    METRIC_NAMEpcons = "sensor.linky_puissance_consommee"
+    METRIC_NAMEhpjb = "linky_tempo_index_bbrhpjb"
+    METRIC_NAMEhcjb = "linky_tempo_index_bbrhcjb"
+    METRIC_NAMEhpjw = "linky_tempo_index_bbrhpjw"
+    METRIC_NAMEhcjw = "linky_tempo_index_bbrhcjw"
+    METRIC_NAMEhpjr = "linky_tempo_index_bbrhpjr"
+    METRIC_NAMEhcjr = "linky_tempo_index_bbrhcjr"
+    METRIC_NAMEpcons = "linky_puissance_consommee"
 else:
     METRIC_NAMEhpjb = "sensor.linky_tempo_index_bbrhpjb_value"
     METRIC_NAMEhcjb = "sensor.linky_tempo_index_bbrhcjb_value"
