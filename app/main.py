@@ -426,9 +426,9 @@ def fetch_tempo_tariffs_and_calculate_costs(dailyweek_HP, dailyweek_HC, dailywee
     # Adaptation des noms de métriques selon le type de DB
     if DB_TYPE == "influxdb":
         tariff_metrics = {
-            "BLUE": {"HP": "sensor.tarif_bleu_tempo_heures_pleines_ttc", "HC": "sensor.tarif_bleu_tempo_heures_creuses_ttc"},
-            "WHITE": {"HP": "sensor.tarif_blanc_tempo_heures_pleines_ttc", "HC": "sensor.tarif_blanc_tempo_heures_creuses_ttc"},
-            "RED": {"HP": "sensor.tarif_rouge_tempo_heures_pleines_ttc", "HC": "sensor.tarif_rouge_tempo_heures_creuses_ttc"},
+            "BLUE": {"HP": "tarif_bleu_tempo_heures_pleines_ttc", "HC": "sensor.tarif_bleu_tempo_heures_creuses_ttc"},
+            "WHITE": {"HP": "tarif_blanc_tempo_heures_pleines_ttc", "HC": "sensor.tarif_blanc_tempo_heures_creuses_ttc"},
+            "RED": {"HP": "tarif_rouge_tempo_heures_pleines_ttc", "HC": "sensor.tarif_rouge_tempo_heures_creuses_ttc"},
         }
     else:
         tariff_metrics = {
